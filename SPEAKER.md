@@ -160,6 +160,56 @@ Pre-flattened: one row per person-role combination (1.36B rows). Sorted by compa
 Lowercase two-letter. Uses `uk` not `gb`. Examples:
 `us`, `uk`, `de`, `fr`, `at`, `ch`, `in`, `br`, `es`, `it`, `nl`, `ca`, `au`, `cn`, `id`, `mx`, `za`, `co`, `pl`, `se`, `tr`, `ae`, `sa`, `eg`, `ng`, `ke`, `sg`, `jp`, `kr`, `ph`, `my`, `th`, `vn`, `ie`, `dk`, `no`, `fi`, `pt`, `ro`, `cz`, `hu`, `il`, `ar`, `cl`, `pe`, `pk`, `bd`
 
+## How to Use Speaker
+
+Speaker is built for **iterative search** — start broad, explore the data, refine your filters, then export. Don't try to write the perfect query first. Explore.
+
+### Typical workflow
+
+```
+Step 1: Scope        → How big is this universe?
+Step 2: Explore      → What does the data look like?
+Step 3: Refine       → Narrow down with title, company, location
+Step 4: Export       → Pull the final list with LIMIT/OFFSET
+Step 5: Enrich       → Get email/bio from people table by slug
+```
+
+### Example: "Find ex-NHS non-clinical leaders now in private sector"
+
+```sql
+-- Step 1: How many people worked at NHS?
+SELECT count() FROM people_roles WHERE org ILIKE '%NHS%'
+
+-- Step 2: What titles exist?
+SELECT title, count() as c FROM people_roles
+WHERE org ILIKE '%NHS%' GROUP BY title ORDER BY c DESC LIMIT 20
+
+-- Step 3: Narrow to leadership, exclude clinical
+SELECT DISTINCT first, last, title, org FROM people_roles
+WHERE org ILIKE '%NHS%' AND end IS NOT NULL
+AND (title ILIKE '%Director%' OR title ILIKE '%Head of%')
+AND NOT (title ILIKE '%Clinical%' OR title ILIKE '%Medical%')
+LIMIT 20
+
+-- Step 4: Where are they now?
+SELECT DISTINCT first, last, title, org, headline FROM people_roles
+WHERE slug IN (
+    SELECT slug FROM people_roles
+    WHERE org ILIKE '%NHS%' AND end IS NOT NULL
+    AND title ILIKE '%Director%'
+)
+AND end IS NULL AND org NOT ILIKE '%NHS%'
+LIMIT 100
+
+-- Step 5: Enrich with email/bio
+SELECT slug, email, bio FROM people
+WHERE slug IN ('john-smith-abc', 'jane-doe-xyz')
+```
+
+Each query takes seconds. You can't do this with a static CSV — you'd need to download the whole database first.
+
+---
+
 ## Query Patterns
 
 ### Search by job title (use `people_roles`)

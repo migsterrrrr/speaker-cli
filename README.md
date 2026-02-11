@@ -153,6 +153,18 @@ speaker query "SELECT first, last, title, org FROM people_roles WHERE org = 'Goo
 speaker query "SELECT first, last, headline FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
 ```
 
+## How it works
+
+Speaker is built for **iterative search** — start broad, refine, export. Don't write the perfect query first. Explore.
+
+```
+1. Scope     → SELECT count() FROM people_roles WHERE org ILIKE '%NHS%'
+2. Explore   → SELECT title, count() ... GROUP BY title ORDER BY c DESC
+3. Refine    → Add filters: title, location, current/past role
+4. Export    → LIMIT 100 OFFSET 0, OFFSET 100, ...
+5. Enrich   → SELECT email, bio FROM people WHERE slug IN (...)
+```
+
 ## Tips
 
 - **Search by job title**: `title` in `people_roles` is the most precise field. Use it for "find me CTOs", "VP Sales", etc.

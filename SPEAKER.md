@@ -24,7 +24,65 @@ speaker status            # Check back later → once approved, API key is saved
 speaker query "SELECT ..." # Start searching
 ```
 
-## Table: `people`
+## Table: `people_roles` ⭐ PRIMARY TABLE
+
+**Start here for most searches.** One row per person-role. Sorted by company name. The `title` field is the most valuable field — it tells you exactly what someone does right now.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | String | **Job title** — the money field. Search here first. |
+| `org` | String | Company name |
+| `org_slug` | String | Company identifier (for exact matching) |
+| `start` | Nullable(String) | Start date (YYYY-MM) |
+| `end` | Nullable(String) | End date. **NULL = current role** |
+| `desc` | Nullable(String) | Role description |
+| `cc` | String | Country code |
+| `slug` | String | Person identifier |
+| `first` | String | First name |
+| `last` | String | Last name |
+| `headline` | String | Professional headline |
+| `loc` | String | Location |
+
+### Key queries with `title`
+
+```sql
+-- Current CTOs in London
+SELECT first, last, title, org FROM people_roles
+WHERE title ILIKE '%CTO%' AND cc = 'uk' AND loc ILIKE '%London%' AND end IS NULL
+LIMIT 20
+
+-- VP Sales at SaaS companies in the US
+SELECT first, last, title, org FROM people_roles
+WHERE title ILIKE '%VP%Sales%' AND end IS NULL AND cc = 'us'
+LIMIT 20
+
+-- Current CFOs in manufacturing
+SELECT first, last, title, org FROM people_roles
+WHERE (title ILIKE '%CFO%' OR title ILIKE '%Chief Financial%')
+AND (org ILIKE '%manufactur%' OR org ILIKE '%industrial%')
+AND end IS NULL AND cc = 'uk'
+LIMIT 20
+
+-- HR Directors in healthcare
+SELECT first, last, title, org FROM people_roles
+WHERE title ILIKE '%HR Director%'
+AND (org ILIKE '%NHS%' OR org ILIKE '%health%' OR org ILIKE '%hospital%')
+AND end IS NULL AND cc = 'uk'
+LIMIT 20
+```
+
+### `title` vs `headline`
+
+| Field | Where | What it is | Use when |
+|-------|-------|-----------|----------|
+| `title` | `people_roles` | Exact job title from a specific role | You want current/past title at a company |
+| `headline` | both tables | Self-written summary, often aspirational | You want how someone describes themselves |
+
+`title` is more reliable — it's "CTO at Acme Corp". `headline` might say "Visionary Technology Leader | AI Enthusiast | Speaker".
+
+---
+
+## Table: `people` — enrichment & headline searches
 
 ### Person Fields
 | Field | Type | Description |
@@ -84,13 +142,18 @@ Pre-flattened: one row per person-role combination (1.36B rows). Sorted by compa
 
 | Query type | Use | Why |
 |------------|-----|-----|
-| "Who works at X?" | `people_roles` | Indexed by org, instant |
-| "Find people with title Y" | `people_roles` | Scans role titles directly |
-| "Ex-company X now at Y" | `people_roles` | Join-free role search |
-| "Headline contains Z" | `people` | Person-level, no roles needed |
-| "People in country X" | `people` | Indexed by cc |
-| "Education at school X" | `people` | edu array only in people |
+| **"Find CTOs in London"** | `people_roles` | Search by `title`, fast |
+| **"Who works at Google?"** | `people_roles` | Indexed by `org`, instant |
+| **"VP Sales at SaaS companies"** | `people_roles` | `title` + `org` combo |
+| **"Ex-McKinsey, now founders"** | `people_roles` | `org` + `headline` |
+| **"Where did ex-Monzo CEOs go?"** | `people_roles` | Subquery on `slug` |
+| "Headline contains 'AI'"  | `people` | Headline-only, no role needed |
+| "Lookup by name" | `people` | Name + country, fast |
+| "Get email/bio for a slug" | `people` | Enrichment after role search |
+| "Education at Oxford" | `people` | `edu` array only in `people` |
 | "Full role history for a person" | `people` | All roles nested in one row |
+
+**Rule of thumb**: if your search involves a job title or company name, use `people_roles`. For everything else, use `people`.
 
 ## Country Codes
 
@@ -99,55 +162,93 @@ Lowercase two-letter. Uses `uk` not `gb`. Examples:
 
 ## Query Patterns
 
-### Search by headline/title
+### Search by job title (use `people_roles`)
 ```sql
--- CTOs in Germany
-SELECT first, last, headline, loc
-FROM people
-WHERE cc = 'de' AND headline LIKE '%CTO%'
+-- Current CTOs in Germany
+SELECT first, last, title, org, loc
+FROM people_roles
+WHERE title ILIKE '%CTO%' AND cc = 'de' AND end IS NULL
 LIMIT 20
 
--- Founders in the UK
-SELECT first, last, headline, loc
-FROM people
-WHERE cc = 'uk' AND headline ILIKE '%founder%'
+-- VP Sales in the US
+SELECT first, last, title, org
+FROM people_roles
+WHERE title ILIKE '%VP%Sales%' AND cc = 'us' AND end IS NULL
+LIMIT 20
+
+-- Founders in the UK (by title)
+SELECT DISTINCT first, last, title, org
+FROM people_roles
+WHERE title ILIKE '%Founder%' AND cc = 'uk' AND end IS NULL
 LIMIT 20
 ```
 
-### Search by company (current employees)
+### Search by company (use `people_roles`)
 ```sql
+-- Current employees at Google
 SELECT first, last, title, org
 FROM people_roles
 WHERE org = 'Google' AND end IS NULL
 LIMIT 20
-```
 
-### Search by company (alumni / past employees)
-```sql
+-- Alumni of McKinsey
 SELECT first, last, title, org, headline
 FROM people_roles
 WHERE org IN ('McKinsey', 'McKinsey & Company') AND end IS NOT NULL
 LIMIT 20
 ```
 
-### Search by current role title
+### Combine title + company
 ```sql
-SELECT first, last, title, org, loc
+-- CTOs at top fintech companies
+SELECT DISTINCT first, last, title, org
 FROM people_roles
-WHERE title ILIKE '%VP Sales%' AND end IS NULL AND cc = 'us'
+WHERE org IN ('Revolut','Monzo','Wise','Starling Bank','Checkout.com','GoCardless')
+AND title ILIKE '%CTO%' AND end IS NULL
+LIMIT 20
+
+-- CFOs in manufacturing
+SELECT first, last, title, org
+FROM people_roles
+WHERE (title ILIKE '%CFO%' OR title ILIKE '%Chief Financial%')
+AND (org ILIKE '%manufactur%' OR org ILIKE '%industrial%')
+AND end IS NULL AND cc = 'uk'
 LIMIT 20
 ```
 
 ### People who moved between companies
 ```sql
--- Ex-Deloitte people: find where they went
-SELECT first, last, headline, title, org
+-- Where did ex-Monzo CEOs go?
+SELECT DISTINCT first, last, headline, title, org
 FROM people_roles
 WHERE slug IN (
-    SELECT slug FROM people_roles WHERE org = 'Deloitte' AND end IS NOT NULL
+    SELECT slug FROM people_roles WHERE org = 'Monzo Bank' AND title ILIKE '%CEO%' AND end IS NOT NULL
 )
 AND end IS NULL
 LIMIT 20
+```
+
+### Search by headline (use `people`)
+```sql
+-- People who describe themselves as AI experts
+SELECT first, last, headline, loc
+FROM people
+WHERE cc = 'uk' AND headline ILIKE '%artificial intelligence%'
+LIMIT 20
+
+-- Founders in the UK (by headline)
+SELECT first, last, headline, loc
+FROM people
+WHERE cc = 'uk' AND headline ILIKE '%founder%'
+LIMIT 20
+```
+
+### Enrich with email/bio (use `people`)
+```sql
+-- After finding people in people_roles, get their email/bio
+SELECT slug, first, last, email, bio
+FROM people
+WHERE slug IN ('john-smith-abc123', 'jane-doe-xyz789')
 ```
 
 ### People who worked in one country but now live in another

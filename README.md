@@ -135,12 +135,27 @@ speaker query "SELECT ... LIMIT 100 OFFSET 0"    # page 1
 speaker query "SELECT ... LIMIT 100 OFFSET 100"   # page 2
 ```
 
+## Tables
+
+| Table | Rows | Use for |
+|-------|------|---------|
+| `people` | 756M | Headline, country, education searches |
+| `people_roles` | 1.36B | Company/role searches (100x faster than ARRAY JOIN) |
+
+```bash
+# Search by company — use people_roles
+speaker query "SELECT first, last, title, org FROM people_roles WHERE org = 'Google' AND end IS NULL LIMIT 20"
+
+# Search by headline — use people
+speaker query "SELECT first, last, headline FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
+```
+
 ## Tips
 
-- **Avoid duplicates**: Use `arrayExists()` instead of `ARRAY JOIN` when you only need person-level results. ARRAY JOIN returns one row per matching role.
-- **Company matching**: `ILIKE '%Wise%'` matches ConnectWise, WiseClick, etc. Use exact match (`r.org = 'Wise'`) or company slug (`r.slug = 'wiseaccount'`).
+- **Use `people_roles` for company searches**: It's 100-300x faster than ARRAY JOIN on `people`. One row per person-role, indexed by company name.
+- **Company matching**: `ILIKE '%Wise%'` matches ConnectWise, WiseClick, etc. Use exact match (`org = 'Wise'`) or company slug (`org_slug = 'wiseaccount'`).
 - **Pagination**: Run `count()` first to know total results, then paginate with `LIMIT`/`OFFSET`.
-- **Errors**: If a query fails, you'll see an error message. Common causes: syntax error, timeout (complex queries on 756M rows), or rate limit.
+- **Errors**: If a query fails, you'll see an error message. Common causes: syntax error, timeout, or rate limit.
 
 ## Notes
 

@@ -290,16 +290,20 @@ COMMANDS:
   speaker update                  Update to latest version
   speaker help                    Show this help
 
+TABLES:
+  people              756M profiles — use for headline, country, education searches
+  people_roles        1.36B rows — use for company/role searches (100x faster than ARRAY JOIN)
+
 EXAMPLES:
   speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
 
+  speaker query "SELECT first, last, title, org FROM people_roles WHERE org = 'Google' AND end IS NULL LIMIT 20"
+
   speaker query "SELECT count() FROM people WHERE cc = 'de'"
 
-  speaker query "SELECT first, last, r.title, r.org FROM people ARRAY JOIN roles AS r WHERE r.org ILIKE '%Google%' AND r.end IS NULL LIMIT 10"
+  speaker query "SELECT DISTINCT first, last, headline FROM people_roles WHERE org IN ('Wise','TransferWise') AND end IS NOT NULL AND headline ILIKE '%Founder%' LIMIT 20"
 
   speaker query "SELECT cc, count() as c FROM people GROUP BY cc ORDER BY c DESC LIMIT 20"
-
-  speaker query "SELECT first, last, headline FROM people WHERE cc = 'fr' AND arrayExists(r -> r.org ILIKE '%NHS%' AND r.end IS NOT NULL, roles) LIMIT 10"
 
 OUTPUT:
   Terminal:  pretty-printed JSON

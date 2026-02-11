@@ -163,6 +163,54 @@ LIMIT 20
 | Max queries per second | 5 |
 | Max queries per day | 5,000 |
 
+## Common Pitfalls
+
+### Duplicate rows from ARRAY JOIN
+ARRAY JOIN produces one row per matching array element. If someone held 3 roles at Google, you get 3 rows for that person. To deduplicate, use `arrayExists` instead of ARRAY JOIN when you only need person-level results:
+
+```sql
+-- BAD: returns duplicates if person had multiple roles at Wise
+SELECT first, last, headline FROM people ARRAY JOIN roles AS r
+WHERE r.org = 'Wise' LIMIT 20
+
+-- GOOD: one row per person
+SELECT first, last, headline FROM people
+WHERE arrayExists(r -> r.org = 'Wise', roles)
+LIMIT 20
+```
+
+Only use ARRAY JOIN when you actually need the role details (title, dates, etc.) in the output. When you do, add `GROUP BY slug` or accept duplicates.
+
+### Company name matching is noisy
+`ILIKE '%Wise%'` matches Wise, ConnectWise, WiseClick, NourishWise, etc. Be specific:
+
+```sql
+-- TOO BROAD
+WHERE r.org ILIKE '%Wise%'
+
+-- BETTER: exact match or known variations
+WHERE r.org IN ('Wise', 'TransferWise', 'Wise (formerly TransferWise)')
+
+-- BEST: use company slug if you know it
+WHERE r.slug = 'wiseaccount'
+```
+
+To find the right slug, search for a known employee first:
+```sql
+SELECT roles FROM people WHERE first = 'Kristo' AND last = 'Käärmann' LIMIT 1
+```
+
+### Combining role filters with person filters
+When filtering on both role fields AND person fields (like headline), use `arrayExists` for the role part:
+
+```sql
+-- Find ex-Wise people who are now founders
+SELECT first, last, headline, loc FROM people
+WHERE arrayExists(r -> r.org IN ('Wise', 'TransferWise') AND r.end IS NOT NULL, roles)
+AND headline ILIKE '%Founder%'
+LIMIT 20
+```
+
 ## Critical Rules
 
 ### Always add LIMIT
@@ -260,17 +308,21 @@ LIMIT 100 OFFSET 100
 LIMIT 100 OFFSET 200
 ```
 
-**How to know if there are more results**: if a query returns exactly the number you set in LIMIT, there are likely more. Run a `count()` first to check:
+**How to know if there are more results**: there is no pagination metadata. Run a `count()` first to know the total, then paginate:
 
 ```sql
--- How many total?
+-- Step 1: how many total?
 SELECT count() FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%'
+-- → 4,832
 
--- Then paginate through them
-SELECT ... LIMIT 100 OFFSET 0
-SELECT ... LIMIT 100 OFFSET 100
--- etc.
+-- Step 2: paginate through them
+SELECT ... LIMIT 100 OFFSET 0     -- page 1
+SELECT ... LIMIT 100 OFFSET 100   -- page 2
+SELECT ... LIMIT 100 OFFSET 200   -- page 3
+-- ...continue until you have all 4,832 or enough
 ```
+
+Always run the count first. Don't just paginate blindly until empty results — you won't know how far to go.
 
 ## Output
 

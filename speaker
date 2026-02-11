@@ -105,6 +105,37 @@ cmd_login() {
     echo "✓ Logged in. API key saved."
 }
 
+cmd_status() {
+    read -p "Email: " email
+
+    local resp
+    resp=$(curl -sf "$API_URL/status" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\"}" 2>&1)
+
+    if [[ $? -ne 0 ]]; then
+        local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
+        echo "${detail:-Could not check status}"
+        exit 1
+    fi
+
+    local status=$(echo "$resp" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+
+    if [[ "$status" == "approved" ]]; then
+        local key=$(echo "$resp" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+        mkdir -p "$CONFIG_DIR"
+        echo "$key" > "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        echo "✓ Approved! API key saved. You're in."
+        echo ""
+        echo "Try:"
+        echo "  speaker count"
+        echo "  speaker query \"SELECT first, last, headline FROM people WHERE cc = 'uk' LIMIT 10\""
+    else
+        echo "⏳ Account is still pending approval. Check back later."
+    fi
+}
+
 cmd_logout() {
     rm -f "$CONFIG_FILE"
     echo "✓ Logged out. API key removed."
@@ -214,6 +245,7 @@ speaker — Search 756M+ B2B person profiles from your terminal.
 
 GETTING STARTED:
   speaker signup                  Create an account
+  speaker status                  Check if your account is approved
   speaker login                   Log in with existing account
   speaker login <api-key>         Log in with an API key directly
 
@@ -262,6 +294,7 @@ CMD="${1:-help}"
 
 case "$CMD" in
     signup)         cmd_signup ;;
+    status)         cmd_status ;;
     login)          cmd_login "$2" ;;
     logout)         cmd_logout ;;
     query|q)        cmd_query "$2" ;;

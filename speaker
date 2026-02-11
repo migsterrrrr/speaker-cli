@@ -5,9 +5,32 @@
 set -e
 
 # --- Config ---
+VERSION="1.0.1"
+REPO_URL="https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main"
 API_URL="https://api.speaker.sh"
 CONFIG_DIR="$HOME/.speaker"
 CONFIG_FILE="$CONFIG_DIR/config"
+
+# --- Version check (non-blocking, background) ---
+check_version() {
+    local latest
+    latest=$(curl -sf --max-time 2 "$REPO_URL/VERSION" 2>/dev/null)
+    if [[ -n "$latest" && "$latest" != "$VERSION" ]]; then
+        echo ""
+        echo "  ⚡ Update available: $VERSION → $latest"
+        echo "     Run: speaker update"
+        echo ""
+    fi
+}
+
+cmd_update() {
+    echo "Updating speaker CLI..."
+    curl -sL "$REPO_URL/speaker" -o /usr/local/bin/speaker
+    chmod +x /usr/local/bin/speaker
+    curl -sL "$REPO_URL/SPEAKER.md" -o "$CONFIG_DIR/SPEAKER.md" 2>/dev/null
+    local new_ver=$(grep '^VERSION=' /usr/local/bin/speaker | cut -d'"' -f2)
+    echo "✓ Updated to v${new_ver}"
+}
 
 # --- Helpers ---
 get_key() {
@@ -254,6 +277,7 @@ COMMANDS:
   speaker count                   Total profiles in the database
   speaker schema                  Show table structure and top countries
   speaker logout                  Remove saved credentials
+  speaker update                  Update to latest version
   speaker help                    Show this help
 
 EXAMPLES:
@@ -297,6 +321,7 @@ case "$CMD" in
     status)         cmd_status ;;
     login)          cmd_login "$2" ;;
     logout)         cmd_logout ;;
+    update)         cmd_update ;;
     query|q)        cmd_query "$2" ;;
     count|c)        cmd_count ;;
     schema|s)       cmd_schema ;;
@@ -311,3 +336,6 @@ case "$CMD" in
         fi
         ;;
 esac
+
+# Check for updates in background (don't slow down the command)
+check_version &

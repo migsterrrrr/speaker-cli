@@ -135,6 +135,13 @@ speaker query "SELECT ... LIMIT 100 OFFSET 0"    # page 1
 speaker query "SELECT ... LIMIT 100 OFFSET 100"   # page 2
 ```
 
+## Tips
+
+- **Avoid duplicates**: Use `arrayExists()` instead of `ARRAY JOIN` when you only need person-level results. ARRAY JOIN returns one row per matching role.
+- **Company matching**: `ILIKE '%Wise%'` matches ConnectWise, WiseClick, etc. Use exact match (`r.org = 'Wise'`) or company slug (`r.slug = 'wiseaccount'`).
+- **Pagination**: Run `count()` first to know total results, then paginate with `LIMIT`/`OFFSET`.
+- **Errors**: If a query fails, you'll see an error message. Common causes: syntax error, timeout (complex queries on 756M rows), or rate limit.
+
 ## Notes
 
 - Country codes are **lowercase**: `us`, `uk`, `de`, `fr`, `at`, `ch`

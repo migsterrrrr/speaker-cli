@@ -291,17 +291,27 @@ COMMANDS:
   speaker help                    Show this help
 
 TABLES:
-  people              756M profiles — use for headline, country, education searches
-  people_roles        1.36B rows — use for company/role searches (100x faster than ARRAY JOIN)
+  people_roles        1.36B rows — MAIN TABLE. Search by job title, company, role.
+                      Fields: first, last, title, org, org_slug, cc, loc, headline, start, end
+  people              756M profiles — for headline, country, education, name, bio, email lookups.
+                      Fields: first, last, headline, loc, cc, email, bio, roles[], edu[]
+
+WHICH TABLE TO USE:
+  "Find CTOs in London"           → people_roles  (search by title)
+  "Who works at Google?"          → people_roles  (search by org)
+  "Ex-McKinsey now founders"      → people_roles  (search by org + headline)
+  "People with 'AI' in headline"  → people        (headline search, no role needed)
+  "Lookup a person by name"       → people        (name + country)
+  "Get email/bio for a slug"      → people        (enrichment)
 
 EXAMPLES:
-  speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
+  speaker query "SELECT first, last, title, org FROM people_roles WHERE title ILIKE '%CTO%' AND cc = 'uk' AND end IS NULL LIMIT 20"
 
   speaker query "SELECT first, last, title, org FROM people_roles WHERE org = 'Google' AND end IS NULL LIMIT 20"
 
-  speaker query "SELECT count() FROM people WHERE cc = 'de'"
-
   speaker query "SELECT DISTINCT first, last, headline FROM people_roles WHERE org IN ('Wise','TransferWise') AND end IS NOT NULL AND headline ILIKE '%Founder%' LIMIT 20"
+
+  speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
 
   speaker query "SELECT cc, count() as c FROM people GROUP BY cc ORDER BY c DESC LIMIT 20"
 

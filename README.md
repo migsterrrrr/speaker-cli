@@ -139,11 +139,14 @@ speaker query "SELECT ... LIMIT 100 OFFSET 100"   # page 2
 
 | Table | Rows | Use for |
 |-------|------|---------|
-| `people` | 756M | Headline, country, education searches |
-| `people_roles` | 1.36B | Company/role searches (100x faster than ARRAY JOIN) |
+| `people_roles` ⭐ | 1.36B | **Start here.** Search by job title, company, role. |
+| `people` | 756M | Headline, country, education, name lookups, email/bio enrichment. |
 
 ```bash
-# Search by company — use people_roles
+# Find CTOs in London — search by title in people_roles
+speaker query "SELECT first, last, title, org FROM people_roles WHERE title ILIKE '%CTO%' AND cc = 'uk' AND loc ILIKE '%London%' AND end IS NULL LIMIT 20"
+
+# Search by company
 speaker query "SELECT first, last, title, org FROM people_roles WHERE org = 'Google' AND end IS NULL LIMIT 20"
 
 # Search by headline — use people
@@ -152,10 +155,12 @@ speaker query "SELECT first, last, headline FROM people WHERE cc = 'uk' AND head
 
 ## Tips
 
-- **Use `people_roles` for company searches**: It's 100-300x faster than ARRAY JOIN on `people`. One row per person-role, indexed by company name.
-- **Company matching**: `ILIKE '%Wise%'` matches ConnectWise, WiseClick, etc. Use exact match (`org = 'Wise'`) or company slug (`org_slug = 'wiseaccount'`).
+- **Search by job title**: `title` in `people_roles` is the most precise field. Use it for "find me CTOs", "VP Sales", etc.
+- **`title` vs `headline`**: `title` = actual job title at a company. `headline` = self-written summary. Title is more reliable.
+- **Use `people_roles` for title + company searches**: 100-300x faster than ARRAY JOIN. Indexed by company name.
+- **Use `people` for everything else**: headline searches, name lookups, education, email/bio enrichment.
+- **Company matching**: `ILIKE '%Wise%'` matches ConnectWise, WiseClick, etc. Use exact match (`org = 'Wise'`) or slug (`org_slug = 'wiseaccount'`).
 - **Pagination**: Run `count()` first to know total results, then paginate with `LIMIT`/`OFFSET`.
-- **Errors**: If a query fails, you'll see an error message. Common causes: syntax error, timeout, or rate limit.
 
 ## Notes
 

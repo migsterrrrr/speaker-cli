@@ -59,6 +59,39 @@ speaker query "SELECT ..." # Start searching
 | `deg` | Nullable(String) | Degree and field of study |
 | `slug` | Nullable(String) | Institution identifier |
 
+## Table: `people_roles`
+
+**Use this table for any company or role search. It's 100-300x faster than ARRAY JOIN on `people`.**
+
+Pre-flattened: one row per person-role combination (1.36B rows). Sorted by company name, so lookups by org are instant.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `org` | String | Company name |
+| `org_slug` | String | Company identifier |
+| `title` | String | Job title |
+| `start` | Nullable(String) | Start date (YYYY-MM) |
+| `end` | Nullable(String) | End date. NULL = current role |
+| `desc` | Nullable(String) | Role description |
+| `cc` | String | Country code |
+| `slug` | String | Person identifier |
+| `first` | String | First name |
+| `last` | String | Last name |
+| `headline` | String | Professional headline |
+| `loc` | String | Location |
+
+### When to use which table
+
+| Query type | Use | Why |
+|------------|-----|-----|
+| "Who works at X?" | `people_roles` | Indexed by org, instant |
+| "Find people with title Y" | `people_roles` | Scans role titles directly |
+| "Ex-company X now at Y" | `people_roles` | Join-free role search |
+| "Headline contains Z" | `people` | Person-level, no roles needed |
+| "People in country X" | `people` | Indexed by cc |
+| "Education at school X" | `people` | edu array only in people |
+| "Full role history for a person" | `people` | All roles nested in one row |
+
 ## Country Codes
 
 Lowercase two-letter. Uses `uk` not `gb`. Examples:
@@ -81,38 +114,39 @@ WHERE cc = 'uk' AND headline ILIKE '%founder%'
 LIMIT 20
 ```
 
-### Search by company (current)
+### Search by company (current employees)
 ```sql
-SELECT first, last, r.title, r.org
-FROM people ARRAY JOIN roles AS r
-WHERE r.org ILIKE '%Google%' AND r.end IS NULL
+SELECT first, last, title, org
+FROM people_roles
+WHERE org = 'Google' AND end IS NULL
 LIMIT 20
 ```
 
-### Search by company (past)
+### Search by company (alumni / past employees)
 ```sql
-SELECT first, last, headline, loc
-FROM people
-WHERE arrayExists(r -> r.org ILIKE '%McKinsey%' AND r.end IS NOT NULL, roles)
-AND cc = 'uk'
+SELECT first, last, title, org, headline
+FROM people_roles
+WHERE org IN ('McKinsey', 'McKinsey & Company') AND end IS NOT NULL
 LIMIT 20
 ```
 
 ### Search by current role title
 ```sql
-SELECT first, last, r.title, r.org, loc
-FROM people ARRAY JOIN roles AS r
-WHERE r.title ILIKE '%VP Sales%' AND r.end IS NULL AND cc = 'us'
+SELECT first, last, title, org, loc
+FROM people_roles
+WHERE title ILIKE '%VP Sales%' AND end IS NULL AND cc = 'us'
 LIMIT 20
 ```
 
 ### People who moved between companies
 ```sql
-SELECT first, last, headline, loc
-FROM people
-WHERE arrayExists(r -> r.org ILIKE '%Deloitte%' AND r.end IS NOT NULL, roles)
-AND arrayExists(r -> r.end IS NULL AND r.org NOT ILIKE '%Deloitte%', roles)
-AND cc = 'uk'
+-- Ex-Deloitte people: find where they went
+SELECT first, last, headline, title, org
+FROM people_roles
+WHERE slug IN (
+    SELECT slug FROM people_roles WHERE org = 'Deloitte' AND end IS NOT NULL
+)
+AND end IS NULL
 LIMIT 20
 ```
 
@@ -165,48 +199,50 @@ LIMIT 20
 
 ## Common Pitfalls
 
-### Duplicate rows from ARRAY JOIN
-ARRAY JOIN produces one row per matching array element. If someone held 3 roles at Google, you get 3 rows for that person. To deduplicate, use `arrayExists` instead of ARRAY JOIN when you only need person-level results:
+### Use `people_roles` for company/role searches — not ARRAY JOIN
+ARRAY JOIN on the `people` table is slow (full-scans 756M rows) and produces duplicates. Use `people_roles` instead:
 
 ```sql
--- BAD: returns duplicates if person had multiple roles at Wise
+-- SLOW (12+ seconds, duplicates): ARRAY JOIN on people
 SELECT first, last, headline FROM people ARRAY JOIN roles AS r
 WHERE r.org = 'Wise' LIMIT 20
 
--- GOOD: one row per person
-SELECT first, last, headline FROM people
-WHERE arrayExists(r -> r.org = 'Wise', roles)
+-- FAST (30ms, no duplicates): people_roles
+SELECT DISTINCT first, last, headline
+FROM people_roles
+WHERE org = 'Wise'
 LIMIT 20
 ```
 
-Only use ARRAY JOIN when you actually need the role details (title, dates, etc.) in the output. When you do, add `GROUP BY slug` or accept duplicates.
+Only use ARRAY JOIN on `people` when you need the full nested roles array in the output.
 
 ### Company name matching is noisy
 `ILIKE '%Wise%'` matches Wise, ConnectWise, WiseClick, NourishWise, etc. Be specific:
 
 ```sql
 -- TOO BROAD
-WHERE r.org ILIKE '%Wise%'
+WHERE org ILIKE '%Wise%'
 
 -- BETTER: exact match or known variations
-WHERE r.org IN ('Wise', 'TransferWise', 'Wise (formerly TransferWise)')
+WHERE org IN ('Wise', 'TransferWise', 'Wise (formerly TransferWise)')
 
 -- BEST: use company slug if you know it
-WHERE r.slug = 'wiseaccount'
+WHERE org_slug = 'wiseaccount'
 ```
 
 To find the right slug, search for a known employee first:
 ```sql
-SELECT roles FROM people WHERE first = 'Kristo' AND last = 'Käärmann' LIMIT 1
+SELECT org, org_slug FROM people_roles WHERE org ILIKE '%Wise%' LIMIT 5
 ```
 
 ### Combining role filters with person filters
-When filtering on both role fields AND person fields (like headline), use `arrayExists` for the role part:
+Use `people_roles` — it has both role and person fields in the same row:
 
 ```sql
 -- Find ex-Wise people who are now founders
-SELECT first, last, headline, loc FROM people
-WHERE arrayExists(r -> r.org IN ('Wise', 'TransferWise') AND r.end IS NOT NULL, roles)
+SELECT DISTINCT first, last, headline, loc
+FROM people_roles
+WHERE org IN ('Wise', 'TransferWise') AND end IS NOT NULL
 AND headline ILIKE '%Founder%'
 LIMIT 20
 ```
@@ -247,21 +283,21 @@ LIMIT 20
 ```
 
 ### Accessing roles and education
-Two patterns for querying arrays:
+Three patterns:
 
-**ARRAY JOIN** — returns one row per role (use when you need role details):
+**`people_roles` table** — fastest for company/role searches (100-300x faster):
 ```sql
-SELECT first, last, r.title, r.org
-FROM people ARRAY JOIN roles AS r
-WHERE r.org ILIKE '%Google%'
+SELECT first, last, title, org
+FROM people_roles
+WHERE org = 'Google' AND end IS NULL
 LIMIT 20
 ```
 
-**arrayExists** — returns one row per person (use for filtering):
+**`arrayExists`** — filter people by role criteria, one row per person:
 ```sql
 SELECT first, last, headline
 FROM people
-WHERE arrayExists(r -> r.org ILIKE '%Google%', roles)
+WHERE arrayExists(r -> r.org = 'Google', roles)
 LIMIT 20
 ```
 
@@ -273,6 +309,8 @@ WHERE cc = 'uk'
 LIMIT 20
 ```
 Note: ClickHouse arrays are 1-indexed. `roles[1]` is the most recent role.
+
+**ARRAY JOIN** — avoid unless you need full nested output. Slow on 756M rows.
 
 ### Current role
 A current role has `end IS NULL`:

@@ -335,7 +335,7 @@ case "$CMD" in
     status)         cmd_status ;;
     login)          cmd_login "$2" ;;
     logout)         cmd_logout ;;
-    update)         cmd_update ;;
+    update)         cmd_update ; exit 0 ;;
     query|q)        cmd_query "$2" ;;
     count|c)        cmd_count ;;
     schema|s)       cmd_schema ;;

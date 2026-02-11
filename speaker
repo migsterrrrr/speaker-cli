@@ -1,0 +1,292 @@
+#!/bin/bash
+# speaker — Search 756M+ B2B person profiles from your terminal.
+# Public data only. SQL-native interface.
+
+set -e
+
+# --- Config ---
+API_URL="https://api.speaker.sh"
+CONFIG_DIR="$HOME/.speaker"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+# --- Helpers ---
+get_key() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        cat "$CONFIG_FILE"
+    else
+        echo ""
+    fi
+}
+
+require_key() {
+    local key=$(get_key)
+    if [[ -z "$key" ]]; then
+        echo "Not logged in. Run 'speaker signup' or 'speaker login' first." >&2
+        exit 1
+    fi
+    echo "$key"
+}
+
+check_auth() {
+    if [[ ! -f "$CONFIG_FILE" ]] || [[ -z "$(cat "$CONFIG_FILE")" ]]; then
+        echo "Not logged in. Run 'speaker signup' or 'speaker login' first."
+        exit 1
+    fi
+}
+
+# --- Commands ---
+cmd_signup() {
+    echo "Create a new account"
+    echo ""
+    read -p "Email: " email
+    read -sp "Password (min 8 chars): " password
+    echo ""
+
+    if [[ -z "$email" || -z "$password" ]]; then
+        echo "Error: email and password required"
+        exit 1
+    fi
+
+    local resp
+    resp=$(curl -sf "$API_URL/signup" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>&1)
+
+    if [[ $? -ne 0 ]]; then
+        local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
+        echo "Error: ${detail:-signup failed}"
+        exit 1
+    fi
+
+    local key=$(echo "$resp" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+    if [[ -z "$key" ]]; then
+        echo "Error: unexpected response"
+        exit 1
+    fi
+
+    mkdir -p "$CONFIG_DIR"
+    echo "$key" > "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+
+    echo "✓ Account created."
+    echo "✓ API key saved to $CONFIG_FILE"
+    echo ""
+    echo "You're ready. Try:"
+    echo "  speaker count"
+    echo "  speaker query \"SELECT first, last, headline FROM people WHERE cc = 'uk' LIMIT 10\""
+}
+
+cmd_login() {
+    # Accept key directly: speaker login sk-abc123
+    if [[ -n "$1" ]]; then
+        # Validate the key
+        local resp
+        resp=$(curl -sf "$API_URL/health" -H "X-API-Key: $1" 2>&1)
+        mkdir -p "$CONFIG_DIR"
+        echo "$1" > "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        echo "✓ API key saved. You're in."
+        return
+    fi
+
+    echo "Log in to your account"
+    echo ""
+    read -p "Email: " email
+    read -sp "Password: " password
+    echo ""
+
+    local resp
+    resp=$(curl -sf "$API_URL/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>&1)
+
+    if [[ $? -ne 0 ]]; then
+        echo "Error: invalid email or password"
+        exit 1
+    fi
+
+    local key=$(echo "$resp" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+    if [[ -z "$key" ]]; then
+        echo "Error: unexpected response"
+        exit 1
+    fi
+
+    mkdir -p "$CONFIG_DIR"
+    echo "$key" > "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+    echo "✓ Logged in. API key saved."
+}
+
+cmd_logout() {
+    rm -f "$CONFIG_FILE"
+    echo "✓ Logged out. API key removed."
+}
+
+cmd_query() {
+    check_auth
+    local key=$(get_key)
+    local sql="$1"
+
+    if [[ -z "$sql" ]]; then
+        echo "Usage: speaker query \"SELECT ...\""
+        exit 1
+    fi
+
+    local resp
+    resp=$(curl -sf "$API_URL/query" \
+        -H "X-API-Key: $key" \
+        -d "$sql" 2>&1)
+
+    if [[ $? -ne 0 ]]; then
+        # Try to extract error detail
+        local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
+        echo "Error: ${detail:-query failed}" >&2
+        exit 1
+    fi
+
+    # Format output
+    if [[ -t 1 ]]; then
+        # Terminal: pretty print
+        echo "$resp" | while IFS= read -r line; do
+            echo "$line" | python3 -m json.tool 2>/dev/null || echo "$line"
+        done
+    else
+        # Piped: raw JSON lines
+        echo "$resp"
+    fi
+}
+
+cmd_count() {
+    check_auth
+    local key=$(get_key)
+    local resp
+    resp=$(curl -sf "$API_URL/query" \
+        -H "X-API-Key: $key" \
+        -d "SELECT formatReadableQuantity(count()) as profiles FROM people")
+    local count=$(echo "$resp" | grep -o '"profiles":"[^"]*"' | cut -d'"' -f4)
+    echo "${count:-Error: could not get count}"
+}
+
+cmd_schema() {
+    check_auth
+    local key=$(get_key)
+    echo ""
+    echo "TABLE: people"
+    echo ""
+    echo "PERSON FIELDS:"
+    echo "  first        String       First name"
+    echo "  last         String       Last name"
+    echo "  slug         String       Unique profile identifier"
+    echo "  headline     String       Current professional headline"
+    echo "  loc          String       Location (city, country)"
+    echo "  cc           String       Country code (lowercase: us, uk, de, fr)"
+    echo "  email        String       Email address (where available)"
+    echo "  bio          String       Short bio (max 200 chars)"
+    echo ""
+    echo "ROLES (work history array — most recent first):"
+    echo "  roles[].title    Job title"
+    echo "  roles[].org      Company name"
+    echo "  roles[].slug     Company identifier"
+    echo "  roles[].web      Company website domain"
+    echo "  roles[].cc       Country code of role"
+    echo "  roles[].start    Start date (YYYY-MM)"
+    echo "  roles[].end      End date (YYYY-MM, NULL = current)"
+    echo "  roles[].desc     Role description (max 120 chars)"
+    echo ""
+    echo "EDUCATION (array):"
+    echo "  edu[].school     Institution name"
+    echo "  edu[].deg        Degree and field"
+    echo "  edu[].slug       Institution identifier"
+    echo ""
+    echo "NOTES:"
+    echo "  - Country codes are lowercase: us, uk, de, fr, at, ch, in, br"
+    echo "  - 'uk' not 'gb' for United Kingdom"
+    echo "  - Current role: roles[1] or WHERE r.end IS NULL"
+    echo "  - ILIKE '%CTO%' also matches 'Director' — use LIKE for exact"
+    echo ""
+
+    local resp
+    resp=$(curl -sf "$API_URL/query" \
+        -H "X-API-Key: $key" \
+        -d "SELECT cc, count() as profiles FROM people GROUP BY cc ORDER BY profiles DESC LIMIT 15")
+    echo "TOP COUNTRIES:"
+    echo "$resp" | while IFS= read -r line; do
+        local cc=$(echo "$line" | grep -o '"cc":"[^"]*"' | cut -d'"' -f4)
+        local cnt=$(echo "$line" | grep -o '"profiles":[0-9]*' | cut -d: -f2)
+        if [[ -n "$cc" && -n "$cnt" ]]; then
+            printf "  %-6s %'d\n" "$cc" "$cnt"
+        fi
+    done
+    echo ""
+}
+
+cmd_help() {
+    cat << 'EOF'
+speaker — Search 756M+ B2B person profiles from your terminal.
+
+GETTING STARTED:
+  speaker signup                  Create an account
+  speaker login                   Log in with existing account
+  speaker login <api-key>         Log in with an API key directly
+
+COMMANDS:
+  speaker query "SQL"             Run a SQL query
+  speaker count                   Total profiles in the database
+  speaker schema                  Show table structure and top countries
+  speaker logout                  Remove saved credentials
+  speaker help                    Show this help
+
+EXAMPLES:
+  speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
+
+  speaker query "SELECT count() FROM people WHERE cc = 'de'"
+
+  speaker query "SELECT first, last, r.title, r.org FROM people ARRAY JOIN roles AS r WHERE r.org ILIKE '%Google%' AND r.end IS NULL LIMIT 10"
+
+  speaker query "SELECT cc, count() as c FROM people GROUP BY cc ORDER BY c DESC LIMIT 20"
+
+  speaker query "SELECT first, last, headline FROM people WHERE cc = 'fr' AND arrayExists(r -> r.org ILIKE '%NHS%' AND r.end IS NOT NULL, roles) LIMIT 10"
+
+OUTPUT:
+  Terminal:  pretty-printed JSON
+  Piped:     raw JSON lines (one per row)
+
+  speaker query "SELECT ..." > results.json
+  speaker query "SELECT ..." | jq '.[].first'
+
+LIMITS:
+  Max rows per query:     1,000
+  Max queries per second: 5
+  Max queries per day:    5,000
+  Paginate with OFFSET:   SELECT ... LIMIT 100 OFFSET 100
+
+CONVENTIONS:
+  cc is lowercase:     us, uk, de, fr, at, ch, in, br
+  UK is 'uk' not 'gb'
+  Dates are YYYY-MM:   2024-01
+  Current role:        roles[1] or WHERE r.end IS NULL
+  ILIKE '%CTO%' also matches 'Director' — use LIKE for case-sensitive
+EOF
+}
+
+# --- Main ---
+CMD="${1:-help}"
+
+case "$CMD" in
+    signup)         cmd_signup ;;
+    login)          cmd_login "$2" ;;
+    logout)         cmd_logout ;;
+    query|q)        cmd_query "$2" ;;
+    count|c)        cmd_count ;;
+    schema|s)       cmd_schema ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        if [[ "$CMD" =~ ^[Ss][Ee][Ll][Ee][Cc][Tt] ]]; then
+            cmd_query "$CMD"
+        else
+            echo "Unknown command: $CMD"
+            echo "Run 'speaker help' for usage."
+            exit 1
+        fi
+        ;;
+esac

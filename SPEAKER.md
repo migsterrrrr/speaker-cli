@@ -5,10 +5,23 @@ A CLI tool for searching 756M+ B2B person profiles via SQL. Run `speaker query "
 ## Quick Reference
 
 ```bash
+speaker signup            # Create account (pending approval)
+speaker status            # Check if approved (auto-saves API key)
 speaker query "SQL"       # Run a query
 speaker count             # Total profiles
 speaker schema            # Show table structure
+speaker update            # Update CLI to latest version
 speaker help              # All commands
+```
+
+## Account Setup
+
+New accounts require approval. The flow:
+
+```bash
+speaker signup            # Enter email + password → account is pending
+speaker status            # Check back later → once approved, API key is saved automatically
+speaker query "SELECT ..." # Start searching
 ```
 
 ## Table: `people`

@@ -18,8 +18,11 @@ chmod +x /usr/local/bin/speaker
 ## Get started
 
 ```bash
-# Create an account (one time)
+# Create an account (pending approval)
 speaker signup
+
+# Check if approved (auto-saves your API key when ready)
+speaker status
 
 # Search
 speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
@@ -29,13 +32,15 @@ speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND
 
 | Command | Description |
 |---------|-------------|
-| `speaker signup` | Create an account |
+| `speaker signup` | Create an account (pending approval) |
+| `speaker status` | Check approval status (auto-saves API key when approved) |
 | `speaker login` | Log in with email/password |
-| `speaker login <key>` | Log in with an API key |
+| `speaker login <key>` | Log in with an API key directly |
 | `speaker query "SQL"` | Run a query |
 | `speaker count` | Total profiles |
 | `speaker schema` | Show table structure |
 | `speaker logout` | Remove credentials |
+| `speaker update` | Update to latest version |
 | `speaker help` | Help |
 
 ## Schema

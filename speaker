@@ -14,7 +14,7 @@ CONFIG_FILE="$CONFIG_DIR/config"
 # --- Version check (non-blocking, background) ---
 check_version() {
     local latest
-    latest=$(curl -sf --max-time 2 "$REPO_URL/VERSION" 2>/dev/null)
+    latest=$(curl -sf --max-time 5 -H "Cache-Control: no-cache" "$REPO_URL/VERSION" 2>/dev/null)
     if [[ -n "$latest" && "$latest" != "$VERSION" ]]; then
         echo ""
         echo "  ⚡ Update available: $VERSION → $latest"

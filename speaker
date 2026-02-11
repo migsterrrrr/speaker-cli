@@ -5,7 +5,7 @@
 set -e
 
 # --- Config ---
-VERSION="1.0.2"
+VERSION="1.0.3"
 REPO_URL="https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main"
 API_URL="https://api.speaker.sh"
 CONFIG_DIR="$HOME/.speaker"
@@ -174,15 +174,25 @@ cmd_query() {
         exit 1
     fi
 
-    local resp
-    resp=$(curl -sf "$API_URL/query" \
+    local resp http_code
+    resp=$(curl -s -w "\n%{http_code}" --max-time 60 "$API_URL/query" \
         -H "X-API-Key: $key" \
         -d "$sql" 2>&1)
 
-    if [[ $? -ne 0 ]]; then
-        # Try to extract error detail
+    http_code=$(echo "$resp" | tail -1)
+    resp=$(echo "$resp" | sed '$d')
+
+    if [[ "$http_code" != "200" ]]; then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
-        echo "Error: ${detail:-query failed}" >&2
+        if [[ "$http_code" == "429" ]]; then
+            echo "Error: Rate limit hit. Wait a moment and try again." >&2
+        elif [[ "$http_code" == "000" ]]; then
+            echo "Error: Could not connect to server. Check your internet connection." >&2
+        elif [[ -n "$detail" ]]; then
+            echo "Error: $detail" >&2
+        else
+            echo "Error: query failed (HTTP $http_code)" >&2
+        fi
         exit 1
     fi
 

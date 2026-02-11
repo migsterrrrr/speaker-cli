@@ -58,22 +58,10 @@ cmd_signup() {
         exit 1
     fi
 
-    local key=$(echo "$resp" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-    if [[ -z "$key" ]]; then
-        echo "Error: unexpected response"
-        exit 1
-    fi
-
-    mkdir -p "$CONFIG_DIR"
-    echo "$key" > "$CONFIG_FILE"
-    chmod 600 "$CONFIG_FILE"
-
-    echo "✓ Account created."
-    echo "✓ API key saved to $CONFIG_FILE"
     echo ""
-    echo "You're ready. Try:"
-    echo "  speaker count"
-    echo "  speaker query \"SELECT first, last, headline FROM people WHERE cc = 'uk' LIMIT 10\""
+    echo "✓ Signup received. Your account is pending approval."
+    echo "  You'll get an API key once approved."
+    echo "  Then run: speaker login <your-api-key>"
 }
 
 cmd_login() {

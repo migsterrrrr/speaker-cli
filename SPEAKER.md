@@ -126,6 +126,29 @@ Results capped at 1,000 rows. Default to `LIMIT 20` for exploration, `LIMIT 100`
 - `LIKE` — case-sensitive. `LIKE '%CTO%'` only matches "CTO"
 - **Gotcha**: `ILIKE '%CTO%'` also matches "DireCTOr", "eleCTOral". Use `LIKE '%CTO%'` or add exclusions.
 
+**Short keywords (≤3 chars) are substring landmines:**
+
+| You searched | Also matches |
+|---|---|
+| `%AI%` | **Ai**rcraft, **Ai**rport, **Ai**rline, M**ai**ntenance |
+| `%LLM%` | Enro**llm**ent, Fulfi**llm**ent |
+| `%CTO%` | Dire**CTO**r, ele**CTO**ral |
+| `%ML%` | HT**ML**, X**ML** |
+
+**Rule: if your keyword is ≤3 characters, never use bare ILIKE.** Spell out the full term or use case-sensitive LIKE with word boundaries:
+
+```sql
+-- BAD: matches Aircraft, Airport, Tai Chi
+WHERE title ILIKE '%AI%'
+
+-- GOOD: spell it out or anchor with spaces/punctuation
+WHERE title ILIKE '%Artificial Intelligence%'
+   OR title LIKE '%Head of AI%'
+   OR title LIKE '%Chief AI Officer%'
+   OR title LIKE '% AI %'
+   OR title LIKE 'AI %'
+```
+
 ### Locale-aware searching
 
 Non-English countries use local titles. Include locale variants:
@@ -233,6 +256,8 @@ WHERE title ILIKE '%Head of%'
    OR title ILIKE '%General Counsel%'
 ```
 
+**Note**: seniority filters like `%Director%` are safe with specific domain keywords (`%Compliance%`), but compound the noise with short keywords — `%Director%` + `%AI%` returns "Director, Aircraft Integration", "Director, Airport Compliance". Fix the short keyword first (see ILIKE section above).
+
 **Better fix**: explore titles at your target companies first (see Workflow below) to see what patterns actually exist.
 
 ### Title conventions vary wildly between companies
@@ -283,6 +308,24 @@ Step 2: Explore what the data actually looks like
 Step 3: Build filters → query per company (or per segment)
 Step 4: Enrich from people table
 ```
+
+### Broad searches (no target companies)
+
+The workflow above assumes you have target companies. If you're searching broadly — e.g. "find AI leaders in the US" — the pitfalls are different. You can't explore per-company first, and false positive rates go way up because you're scanning millions of rows with ILIKE.
+
+**Strategy**: start with the most specific patterns, review results, then broaden progressively.
+
+```sql
+-- Start narrow: exact roles
+WHERE title ILIKE '%Chief AI Officer%' OR title ILIKE '%Head of AI%'
+
+-- Review results. Then broaden carefully:
+WHERE title ILIKE '%Artificial Intelligence%'
+  AND (title ILIKE '%Director%' OR title ILIKE '%VP%')
+  AND cc = 'us' AND end IS NULL
+```
+
+Don't start broad and filter down — start specific and widen.
 
 ### Step 1: Resolve org_slugs
 

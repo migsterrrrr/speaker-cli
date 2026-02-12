@@ -59,21 +59,28 @@ check_auth() {
 
 # --- Commands ---
 cmd_signup() {
-    echo "Create a new account"
-    echo ""
-    read -p "Email: " email
-    read -sp "Password (min 8 chars): " password
-    echo ""
+    local email="$1"
+    local invite_code="$2"
 
-    if [[ -z "$email" || -z "$password" ]]; then
-        echo "Error: email and password required"
+    # Interactive if args not provided
+    if [[ -z "$email" ]]; then
+        echo "Create a new account"
+        echo ""
+        read -p "Email: " email
+    fi
+    if [[ -z "$invite_code" ]]; then
+        read -p "Invite code: " invite_code
+    fi
+
+    if [[ -z "$email" || -z "$invite_code" ]]; then
+        echo "Error: email and invite code required"
         exit 1
     fi
 
     local resp
     resp=$(curl -sf "$API_URL/signup" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>&1)
+        -d "{\"email\":\"$email\",\"invite_code\":\"$invite_code\"}" 2>&1)
 
     if [[ $? -ne 0 ]]; then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
@@ -81,10 +88,16 @@ cmd_signup() {
         exit 1
     fi
 
-    echo ""
-    echo "✓ Signup received. Your account is pending approval."
-    echo "  You'll get an API key once approved."
-    echo "  Then run: speaker login <your-api-key>"
+    local key=$(echo "$resp" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
+    if [[ -z "$key" ]]; then
+        echo "Error: unexpected response"
+        exit 1
+    fi
+
+    mkdir -p "$CONFIG_DIR"
+    echo "$key" > "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+    echo "✓ Account created. API key saved. You're in."
 }
 
 cmd_login() {
@@ -334,6 +347,8 @@ CONVENTIONS:
   Dates are YYYY-MM:   2024-01
   Current role:        roles[1] or WHERE r.end IS NULL
   ILIKE '%CTO%' also matches 'Director' — use LIKE for case-sensitive
+
+Full docs: ~/.speaker/SPEAKER.md
 EOF
 }
 
@@ -341,7 +356,7 @@ EOF
 CMD="${1:-help}"
 
 case "$CMD" in
-    signup)         cmd_signup ;;
+    signup)         cmd_signup "$2" "$3" ;;
     status)         cmd_status ;;
     login)          cmd_login "$2" ;;
     logout)         cmd_logout ;;

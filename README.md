@@ -17,25 +17,32 @@ chmod +x /usr/local/bin/speaker
 
 ## Get started
 
+Speaker is invite-only. You need an invite code to sign up.
+
 ```bash
-# Create an account (pending approval)
+# Sign up with your invite code
 speaker signup
 
-# Check if approved (auto-saves your API key when ready)
-speaker status
+# Or non-interactively (agent-friendly)
+speaker signup you@example.com YOUR-INVITE-CODE
 
-# Search
+# Start searching immediately — no approval wait
 speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
+```
+
+Your API key is saved to `~/.speaker/config` on signup. If you need to log in on another machine, use:
+
+```bash
+speaker login <your-api-key>
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `speaker signup` | Create an account (pending approval) |
-| `speaker status` | Check approval status (auto-saves API key when approved) |
-| `speaker login` | Log in with email/password |
-| `speaker login <key>` | Log in with an API key directly |
+| `speaker signup` | Sign up with an invite code (interactive) |
+| `speaker signup <email> <code>` | Sign up non-interactively (agent-friendly) |
+| `speaker login <key>` | Log in with an API key on another machine |
 | `speaker query "SQL"` | Run a query |
 | `speaker count` | Total profiles |
 | `speaker schema` | Show table structure |

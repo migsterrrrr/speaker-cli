@@ -1,6 +1,8 @@
 # Speaker — B2B Person Search
 
-A CLI tool for searching 756M+ B2B person profiles via SQL. Run `speaker query "SELECT ..."` to search.
+756M+ person profiles. Query any combination of fields — job title, company, location, headline, education, bio, and more. Full SQL access via `speaker query`.
+
+Use it however you want. Sales prospecting, market research, recruiting, competitive analysis, or things we haven't thought of yet. This doc is guidance based on what we've learned so far — not rules. The data is yours to explore.
 
 ## Quick Reference
 
@@ -12,531 +14,522 @@ speaker query "SQL"                   # Run a query
 speaker count                         # Total profiles
 speaker schema                        # Show table structure
 speaker update                        # Update CLI to latest version
-speaker help                          # All commands
 ```
 
 ## Account Setup
 
-Speaker is invite-only. You need an invite code to sign up.
+Speaker is invite-only.
 
 ```bash
 speaker signup                        # Prompts for email + invite code
 speaker signup you@x.com INV-abc123   # Non-interactive (for agents)
 ```
 
-On signup, your API key is saved to `~/.speaker/config` and you can query immediately — no approval wait.
+API key saved to `~/.speaker/config` on signup. To log in elsewhere: `speaker login <your-api-key>`
 
-To log in on another machine or after a fresh install, use your API key:
-```bash
-speaker login <your-api-key>
-```
+## Tables
 
-## Table: `people_roles` ⭐ PRIMARY TABLE
+### `people_roles` ⭐ PRIMARY TABLE
 
-**Start here for most searches.** One row per person-role. Sorted by company name. The `title` field is the most valuable field — it tells you exactly what someone does right now.
+One row per person-role. 1.36B rows. Sorted by company name.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `title` | String | **Job title** — the money field. Search here first. |
+| `title` | String | Job title |
 | `org` | String | Company name |
 | `org_slug` | String | Company identifier (for exact matching) |
 | `start` | Nullable(String) | Start date (YYYY-MM) |
 | `end` | Nullable(String) | End date. **NULL = current role** |
-| `desc` | Nullable(String) | Role description |
+| `desc` | Nullable(String) | Role description — useful for qualifying scope of responsibility |
 | `cc` | String | Country code |
-| `slug` | String | Person identifier |
+| `slug` | String | **Person identifier — always include this** |
 | `first` | String | First name |
 | `last` | String | Last name |
 | `headline` | String | Professional headline |
 | `loc` | String | Location |
 
-### Key queries with `title`
+### `people` — enrichment & everything else
 
-```sql
--- Current CTOs in London
-SELECT first, last, title, org FROM people_roles
-WHERE title ILIKE '%CTO%' AND cc = 'uk' AND loc ILIKE '%London%' AND end IS NULL
-LIMIT 20
+756M profiles. One row per person.
 
--- VP Sales at SaaS companies in the US
-SELECT first, last, title, org FROM people_roles
-WHERE title ILIKE '%VP%Sales%' AND end IS NULL AND cc = 'us'
-LIMIT 20
-
--- Current CFOs in manufacturing
-SELECT first, last, title, org FROM people_roles
-WHERE (title ILIKE '%CFO%' OR title ILIKE '%Chief Financial%')
-AND (org ILIKE '%manufactur%' OR org ILIKE '%industrial%')
-AND end IS NULL AND cc = 'uk'
-LIMIT 20
-
--- HR Directors in healthcare
-SELECT first, last, title, org FROM people_roles
-WHERE title ILIKE '%HR Director%'
-AND (org ILIKE '%NHS%' OR org ILIKE '%health%' OR org ILIKE '%hospital%')
-AND end IS NULL AND cc = 'uk'
-LIMIT 20
-```
-
-### `title` vs `headline`
-
-| Field | Where | What it is | Use when |
-|-------|-------|-----------|----------|
-| `title` | `people_roles` | Exact job title from a specific role | You want current/past title at a company |
-| `headline` | both tables | Self-written summary, often aspirational | You want how someone describes themselves |
-
-`title` is more reliable — it's "CTO at Acme Corp". `headline` might say "Visionary Technology Leader | AI Enthusiast | Speaker".
-
----
-
-## Table: `people` — enrichment & headline searches
-
-### Person Fields
 | Field | Type | Description |
 |-------|------|-------------|
 | `first` | String | First name |
 | `last` | String | Last name |
-| `slug` | String | Unique profile identifier |
+| `slug` | String | Unique person identifier |
 | `headline` | Nullable(String) | Professional headline |
 | `loc` | Nullable(String) | Location (city, country) |
 | `cc` | LowCardinality(String) | Country code (lowercase) |
 | `email` | Nullable(String) | Email (where available) |
 | `bio` | Nullable(String) | Short bio (max 200 chars) |
-| `roles` | Array(Tuple) | Work history, most recent first |
-| `edu` | Array(Tuple) | Education history |
+| `roles` | Array(Tuple) | Work history — `title`, `org`, `slug`, `web`, `cc`, `start`, `end`, `desc` |
+| `edu` | Array(Tuple) | Education — `school`, `deg`, `slug` |
 
-### Role Fields (inside `roles` array)
-| Field | Type | Description |
-|-------|------|-------------|
-| `title` | String | Job title |
-| `org` | String | Company name |
-| `slug` | Nullable(String) | Company identifier |
-| `web` | Nullable(String) | Company website domain |
-| `cc` | Nullable(String) | Country code of role |
-| `start` | String | Start date (YYYY-MM) |
-| `end` | Nullable(String) | End date (YYYY-MM). NULL = current role |
-| `desc` | Nullable(String) | Role description (max 120 chars) |
+### Which table to use
 
-### Education Fields (inside `edu` array)
-| Field | Type | Description |
-|-------|------|-------------|
-| `school` | String | Institution name |
-| `deg` | Nullable(String) | Degree and field of study |
-| `slug` | Nullable(String) | Institution identifier |
+| If your search involves... | Use | Why |
+|---------------------------|-----|-----|
+| Job title or company name | `people_roles` | Indexed, fast |
+| Company alumni / career tracking | `people_roles` | Subquery on `slug` |
+| Headline search | `people` | No role needed |
+| Name lookup | `people` | Name + country |
+| Email, bio, education | `people` | Only here |
 
-## Table: `people_roles`
+**Rule of thumb**: title or company → `people_roles`. Everything else → `people`.
 
-**Use this table for any company or role search. It's 100-300x faster than ARRAY JOIN on `people`.**
+## Critical Rules
 
-Pre-flattened: one row per person-role combination (1.36B rows). Sorted by company name, so lookups by org are instant.
+### Always SELECT slug
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `org` | String | Company name |
-| `org_slug` | String | Company identifier |
-| `title` | String | Job title |
-| `start` | Nullable(String) | Start date (YYYY-MM) |
-| `end` | Nullable(String) | End date. NULL = current role |
-| `desc` | Nullable(String) | Role description |
-| `cc` | String | Country code |
-| `slug` | String | Person identifier |
-| `first` | String | First name |
-| `last` | String | Last name |
-| `headline` | String | Professional headline |
-| `loc` | String | Location |
+Include `slug` in every query. It's the unique person identifier for:
 
-### When to use which table
-
-| Query type | Use | Why |
-|------------|-----|-----|
-| **"Find CTOs in London"** | `people_roles` | Search by `title`, fast |
-| **"Who works at Google?"** | `people_roles` | Indexed by `org`, instant |
-| **"VP Sales at SaaS companies"** | `people_roles` | `title` + `org` combo |
-| **"Ex-McKinsey, now founders"** | `people_roles` | `org` + `headline` |
-| **"Where did ex-Monzo CEOs go?"** | `people_roles` | Subquery on `slug` |
-| "Headline contains 'AI'"  | `people` | Headline-only, no role needed |
-| "Lookup by name" | `people` | Name + country, fast |
-| "Get email/bio for a slug" | `people` | Enrichment after role search |
-| "Education at Oxford" | `people` | `edu` array only in `people` |
-| "Full role history for a person" | `people` | All roles nested in one row |
-
-**Rule of thumb**: if your search involves a job title or company name, use `people_roles`. For everything else, use `people`.
-
-## Country Codes
-
-Lowercase two-letter. Uses `uk` not `gb`. Examples:
-`us`, `uk`, `de`, `fr`, `at`, `ch`, `in`, `br`, `es`, `it`, `nl`, `ca`, `au`, `cn`, `id`, `mx`, `za`, `co`, `pl`, `se`, `tr`, `ae`, `sa`, `eg`, `ng`, `ke`, `sg`, `jp`, `kr`, `ph`, `my`, `th`, `vn`, `ie`, `dk`, `no`, `fi`, `pt`, `ro`, `cz`, `hu`, `il`, `ar`, `cl`, `pe`, `pk`, `bd`
-
-## How to Use Speaker
-
-Speaker is built for **iterative search** — start broad, explore the data, refine your filters, then export. Don't try to write the perfect query first. Explore.
-
-### Typical workflow
-
-```
-Step 1: Scope        → How big is this universe?
-Step 2: Explore      → What does the data look like?
-Step 3: Refine       → Narrow down with title, company, location
-Step 4: Export       → Pull the final list with LIMIT/OFFSET
-Step 5: Enrich       → Get email/bio from people table by slug
-```
-
-### Example: "Find ex-NHS non-clinical leaders now in private sector"
+1. **Enrichment** — look up email/bio from `people`
+2. **Profile URLs** — `https://linkedin.com/in/{slug}`
+3. **Deduplication** — deduplicate by `slug`, not by name (names are not unique)
 
 ```sql
--- Step 1: How many people worked at NHS?
-SELECT count() FROM people_roles WHERE org ILIKE '%NHS%'
+-- BAD: no slug
+SELECT first, last, title, org FROM people_roles WHERE ...
 
--- Step 2: What titles exist?
-SELECT title, count() as c FROM people_roles
-WHERE org ILIKE '%NHS%' GROUP BY title ORDER BY c DESC LIMIT 20
-
--- Step 3: Narrow to leadership, exclude clinical
-SELECT DISTINCT first, last, title, org FROM people_roles
-WHERE org ILIKE '%NHS%' AND end IS NOT NULL
-AND (title ILIKE '%Director%' OR title ILIKE '%Head of%')
-AND NOT (title ILIKE '%Clinical%' OR title ILIKE '%Medical%')
-LIMIT 20
-
--- Step 4: Where are they now?
-SELECT DISTINCT first, last, title, org, headline FROM people_roles
-WHERE slug IN (
-    SELECT slug FROM people_roles
-    WHERE org ILIKE '%NHS%' AND end IS NOT NULL
-    AND title ILIKE '%Director%'
-)
-AND end IS NULL AND org NOT ILIKE '%NHS%'
-LIMIT 100
-
--- Step 5: Enrich with email/bio
-SELECT slug, email, bio FROM people
-WHERE slug IN ('john-smith-abc', 'jane-doe-xyz')
+-- GOOD
+SELECT first, last, title, org, loc, slug FROM people_roles WHERE ...
 ```
 
-Each query takes seconds. You can't do this with a static CSV — you'd need to download the whole database first.
+### Always use DISTINCT
 
----
+`people_roles` has one row per person-role. Without DISTINCT, the same person appears multiple times in many common queries.
+
+```sql
+-- Without DISTINCT: someone who had 3 roles at Monzo appears 3 times
+SELECT first, last, headline FROM people_roles
+WHERE org = 'Monzo Bank' AND end IS NOT NULL LIMIT 20
+
+-- With DISTINCT: one row per person
+SELECT DISTINCT first, last, headline FROM people_roles
+WHERE org = 'Monzo Bank' AND end IS NOT NULL LIMIT 20
+```
+
+Why duplicates appear:
+- **Multiple roles at same company** — promotions where old role wasn't end-dated
+- **Related entities** — "N26" and "N26 Group" both map to same org_slug
+- **Title variations** — "Chief Compliance Officer" vs "Chief Compliance Officer (CCO)"
+
+Deduplicate by `slug` for one row per person, or `(slug, org_slug)` for one row per person per company.
+
+### Always add LIMIT
+
+Results capped at 1,000 rows. Default to `LIMIT 20` for exploration, `LIMIT 100` for exports.
+
+### ILIKE vs LIKE
+
+- `ILIKE` — case-insensitive. `ILIKE '%cto%'` matches "CTO", "cto", "Cto"
+- `LIKE` — case-sensitive. `LIKE '%CTO%'` only matches "CTO"
+- **Gotcha**: `ILIKE '%CTO%'` also matches "DireCTOr", "eleCTOral". Use `LIKE '%CTO%'` or add exclusions.
+
+### Locale-aware searching
+
+Non-English countries use local titles. Include locale variants:
+
+| English | German | French | Spanish |
+|---------|--------|--------|---------|
+| CEO | Geschäftsführer | PDG, Directeur Général | Director General |
+| CTO | Technischer Leiter | Directeur Technique | Director Técnico |
+| CFO | Finanzvorstand | Directeur Financier | Director Financiero |
+| Founder | Gründer/in | Fondateur/Fondatrice | Fundador/a |
+| Head of | Leiter/in | Responsable, Directeur | Jefe de |
+
+## Things That Go Wrong
+
+This is the most important section. Everything above you can figure out from the schema. These are the things that look correct, return results, but are silently wrong.
+
+### LIMIT starvation with multi-company queries
+
+**The trap**: you have 40 target companies, so you query them all at once:
+
+```sql
+-- Looks right. Returns 500 results. But PayPal eats 152 of them
+-- and Remitly gets 3 out of its 18 actual matches.
+SELECT first, last, title, org, loc, slug FROM people_roles
+WHERE org_slug IN ('paypal', 'revolut', 'stripe', 'remitly', ... 36 more)
+AND title ILIKE '%Compliance%' AND end IS NULL
+LIMIT 500
+```
+
+**Why**: `people_roles` is sorted by company. The engine scans in order, hits LIMIT, stops. Companies early in the scan get full coverage. Companies later get scraps or nothing. You won't notice because you got 500 results.
+
+**Fix**: query each company separately.
+
+```sql
+-- Do this for EACH company:
+SELECT DISTINCT first, last, title, org, loc, slug FROM people_roles
+WHERE org_slug = 'remitly'
+AND title ILIKE '%Compliance%' AND end IS NULL
+LIMIT 100
+```
+
+**Rule: if your IN list has >5 companies, query each one separately.** You have 5,000 queries/day — use them.
+
+### Company names are dangerously ambiguous
+
+**The trap**: `org = 'Mercury'` matches Mercury the fintech, Mercury Shipping, Mercury Insurance, Mercury Marine, Mercury Coaching — 15+ companies.
+
+Even exact match `org = 'Wise'` returns multiple companies literally named "Wise".
+
+**Fix**: always resolve to `org_slug` first.
+
+```sql
+SELECT org, org_slug, count() as c FROM people_roles
+WHERE org = 'Mercury' AND end IS NULL
+GROUP BY org, org_slug ORDER BY c DESC LIMIT 20
+```
+
+Then verify:
+```sql
+SELECT first, last, title FROM people_roles
+WHERE org_slug = 'mercuryhq' AND end IS NULL LIMIT 5
+```
+
+**Slugs are not guessable:**
+
+| Company | You'd guess | Actual slug |
+|---------|-------------|-------------|
+| Wise | wise | `wiseaccount` |
+| Block | block | `joinblock` |
+| Square | square | `joinsquare` |
+| Monzo | monzo | `monzo-bank` |
+| Mercury | mercury | `mercuryhq` |
+| Chime | chime | `chime-card` |
+| Siemens | siemens | `siaborsiemens` |
+| BMW | bmw | `bmwgroup` |
+| Deloitte | deloitte | `deloitte` |
+| McKinsey | mckinsey | `mckinsey` |
+
+Name variations share the same slug — "N26", "N26 Group", "Number26" all map to `n26`.
+
+**When org_slug is empty or missing**: some people (especially at small/new companies) have empty `org_slug`. If `org_slug` returns nothing, fall back to `WHERE org = 'CompanyName'`. For very new startups, also try `headline ILIKE '%CompanyName%'` on the `people` table.
+
+### Seniority filters have false positives
+
+**The trap**: you want decision-makers, so you add broad seniority keywords:
+
+```sql
+-- Looks like a seniority filter. Actually matches analysts and assistants.
+WHERE title ILIKE '%Global%'        -- "Global AML Analyst" ← analyst
+WHERE title ILIKE '%Executive%'     -- "Executive Assistant" ← assistant
+WHERE title ILIKE '%Senior%'        -- "Senior Analyst" ← not a buyer
+```
+
+In one real search, `%Global%` inflated PayPal from 53 real decision-makers to 152 results — nearly 100 false positives from one bad keyword.
+
+**Fix**: be specific:
+
+```sql
+WHERE title ILIKE '%Head of%'
+   OR title ILIKE '%Chief%Officer%'
+   OR title ILIKE '%Director%'
+   OR title ILIKE '%VP %'
+   OR title ILIKE '%Vice President%'
+   OR title ILIKE '%Global Head%'
+   OR title ILIKE '%General Counsel%'
+```
+
+**Better fix**: explore titles at your target companies first (see Workflow below) to see what patterns actually exist.
+
+### Title conventions vary wildly between companies
+
+**The trap**: you search for `%Financial Crime%` and miss Revolut's results because they call it "Fincrime". You search for `%Head%` and miss PayPal's "SVP" people.
+
+**Fix**: always explore title distributions at 2-3 target companies before building your final query:
+
+```sql
+SELECT title, count() as c FROM people_roles
+WHERE org_slug = 'revolut'
+AND (title ILIKE '%Compliance%' OR title ILIKE '%AML%' OR title ILIKE '%Fincrime%')
+AND end IS NULL
+GROUP BY title ORDER BY c DESC LIMIT 30
+```
+
+### Email coverage is near zero for senior roles
+
+For 874 compliance professionals at major fintechs, we got **0 emails**. "Limited" undersells it — email is near zero for senior people at large companies.
+
+| Segment | Email rate |
+|---------|-----------|
+| Founders / solo operators | Some |
+| Mid-level at SMBs | Low |
+| Senior execs at large companies | Near zero |
+
+Use `slug` for profile-based outreach: `https://linkedin.com/in/{slug}`
+
+### ARRAY JOIN is 100-300x slower than people_roles
+
+```sql
+-- SLOW (12+ seconds):
+SELECT first, last FROM people ARRAY JOIN roles AS r WHERE r.org = 'Wise' LIMIT 20
+
+-- FAST (30ms):
+SELECT DISTINCT first, last FROM people_roles WHERE org = 'Wise' LIMIT 20
+```
+
+Only use ARRAY JOIN when you need the full nested roles array in output.
+
+## The Workflow
+
+This is what we've learned works. Your use case might be different — adapt it.
+
+```
+Step 1: Identify targets → resolve org_slugs
+Step 2: Explore what the data actually looks like
+Step 3: Build filters → query per company (or per segment)
+Step 4: Enrich from people table
+```
+
+### Step 1: Resolve org_slugs
+
+```sql
+SELECT org, org_slug, count() as c FROM people_roles
+WHERE org = 'Mercury' AND end IS NULL
+GROUP BY org, org_slug ORDER BY c DESC LIMIT 20
+```
+
+If targeting many companies, build a slug map first. If org_slug is empty, fall back to `org = 'Name'`.
+
+### Step 2: Explore before you filter
+
+Don't guess what titles, keywords, or patterns exist. Look.
+
+```sql
+-- What titles exist at this company?
+SELECT title, count() as c FROM people_roles
+WHERE org_slug = 'revolut' AND end IS NULL
+GROUP BY title ORDER BY c DESC LIMIT 30
+
+-- What does the desc field say? (role descriptions — useful for qualification)
+SELECT title, desc FROM people_roles
+WHERE org_slug = 'stripe' AND title ILIKE '%Compliance%' AND end IS NULL
+LIMIT 10
+```
+
+The `desc` field contains role descriptions when available — things like "Leading a team of 50 AML analysts across EMEA." Useful for understanding scope of responsibility, team size, and whether someone is a real decision-maker.
+
+### Step 3: Query per company
+
+```sql
+SELECT DISTINCT first, last, title, org, loc, slug FROM people_roles
+WHERE org_slug = 'revolut'
+AND (title ILIKE '%Compliance%' OR title ILIKE '%AML%' OR title ILIKE '%Fincrime%')
+AND (title ILIKE '%Head%' OR title ILIKE '%Director%' OR title ILIKE '%VP%'
+     OR title ILIKE '%Chief%')
+AND end IS NULL
+LIMIT 100
+```
+
+Repeat per company. Combine results in your script.
+
+### Step 4: Enrich
+
+```sql
+SELECT slug, email, bio FROM people
+WHERE slug IN ('slug1', 'slug2', ..., 'slug200')
+```
+
+Batch in groups of ~200 slugs. Profile URLs: `https://linkedin.com/in/{slug}`
+
+Bio (~20-60% coverage) is useful for qualification and personalization.
 
 ## Query Patterns
 
-### Search by job title (use `people_roles`)
+These cover common use cases beyond prospecting.
+
+### Company alumni — where did they go?
+
 ```sql
--- Current CTOs in Germany
-SELECT first, last, title, org, loc
-FROM people_roles
-WHERE title ILIKE '%CTO%' AND cc = 'de' AND end IS NULL
-LIMIT 20
-
--- VP Sales in the US
-SELECT first, last, title, org
-FROM people_roles
-WHERE title ILIKE '%VP%Sales%' AND cc = 'us' AND end IS NULL
-LIMIT 20
-
--- Founders in the UK (by title)
-SELECT DISTINCT first, last, title, org
-FROM people_roles
-WHERE title ILIKE '%Founder%' AND cc = 'uk' AND end IS NULL
-LIMIT 20
-```
-
-### Search by company (use `people_roles`)
-```sql
--- Current employees at Google
-SELECT first, last, title, org
-FROM people_roles
-WHERE org = 'Google' AND end IS NULL
-LIMIT 20
-
--- Alumni of McKinsey
-SELECT first, last, title, org, headline
-FROM people_roles
-WHERE org IN ('McKinsey', 'McKinsey & Company') AND end IS NOT NULL
-LIMIT 20
-```
-
-### Combine title + company
-```sql
--- CTOs at top fintech companies
-SELECT DISTINCT first, last, title, org
-FROM people_roles
-WHERE org IN ('Revolut','Monzo','Wise','Starling Bank','Checkout.com','GoCardless')
-AND title ILIKE '%CTO%' AND end IS NULL
-LIMIT 20
-
--- CFOs in manufacturing
-SELECT first, last, title, org
-FROM people_roles
-WHERE (title ILIKE '%CFO%' OR title ILIKE '%Chief Financial%')
-AND (org ILIKE '%manufactur%' OR org ILIKE '%industrial%')
-AND end IS NULL AND cc = 'uk'
-LIMIT 20
-```
-
-### People who moved between companies
-```sql
--- Where did ex-Monzo CEOs go?
-SELECT DISTINCT first, last, headline, title, org
-FROM people_roles
+SELECT DISTINCT first, last, title, org, headline FROM people_roles
 WHERE slug IN (
-    SELECT slug FROM people_roles WHERE org = 'Monzo Bank' AND title ILIKE '%CEO%' AND end IS NOT NULL
+    SELECT DISTINCT slug FROM people_roles
+    WHERE org_slug = 'monzo-bank' AND end IS NOT NULL
 )
-AND end IS NULL
-LIMIT 20
+AND end IS NULL AND org_slug != 'monzo-bank'
+LIMIT 100
 ```
 
-### Search by headline (use `people`)
-```sql
--- People who describe themselves as AI experts
-SELECT first, last, headline, loc
-FROM people
-WHERE cc = 'uk' AND headline ILIKE '%artificial intelligence%'
-LIMIT 20
+### People who moved between countries
 
--- Founders in the UK (by headline)
-SELECT first, last, headline, loc
-FROM people
-WHERE cc = 'uk' AND headline ILIKE '%founder%'
-LIMIT 20
-```
-
-### Enrich with email/bio (use `people`)
 ```sql
--- After finding people in people_roles, get their email/bio
-SELECT slug, first, last, email, bio
-FROM people
-WHERE slug IN ('john-smith-abc123', 'jane-doe-xyz789')
-```
-
-### People who worked in one country but now live in another
-```sql
-SELECT first, last, headline, loc
-FROM people
+SELECT first, last, headline, loc FROM people
 WHERE cc = 'uk' AND arrayExists(r -> r.cc = 'de', roles)
 LIMIT 20
 ```
 
+### Education search
+
+```sql
+SELECT first, last, headline, loc FROM people
+WHERE arrayExists(e -> e.school ILIKE '%Oxford%', edu) AND cc = 'uk'
+LIMIT 20
+```
+
+### Headline search
+
+```sql
+SELECT first, last, headline, loc FROM people
+WHERE cc = 'uk' AND headline ILIKE '%artificial intelligence%'
+LIMIT 20
+```
+
 ### Count by country
+
 ```sql
 SELECT cc, count() as c FROM people GROUP BY cc ORDER BY c DESC LIMIT 20
 ```
 
-### Search by education
-```sql
-SELECT first, last, headline, loc
-FROM people
-WHERE arrayExists(e -> e.school ILIKE '%Oxford%', edu)
-AND cc = 'uk'
-LIMIT 20
-```
+### Name lookup
 
-### Search by name
 ```sql
-SELECT first, last, headline, loc, slug
-FROM people
+SELECT first, last, headline, loc, slug FROM people
 WHERE first = 'Michael' AND last = 'Riedler'
 ```
 
-### Combine filters
+### People at a company (current)
+
 ```sql
-SELECT first, last, headline, loc
-FROM people
-WHERE cc = 'uk'
-AND headline ILIKE '%founder%'
-AND arrayExists(r -> r.org ILIKE '%NHS%' AND r.end IS NOT NULL, roles)
+SELECT DISTINCT first, last, title FROM people_roles
+WHERE org_slug = 'google' AND end IS NULL
 LIMIT 20
 ```
 
-## Limits
-
-| Limit | Value |
-|-------|-------|
-| Max rows per query | 1,000 |
-| Max queries per second | 5 |
-| Max queries per day | 5,000 |
-
-## Common Pitfalls
-
-### Use `people_roles` for company/role searches — not ARRAY JOIN
-ARRAY JOIN on the `people` table is slow (full-scans 756M rows) and produces duplicates. Use `people_roles` instead:
+### Title distribution at a company
 
 ```sql
--- SLOW (12+ seconds, duplicates): ARRAY JOIN on people
-SELECT first, last, headline FROM people ARRAY JOIN roles AS r
-WHERE r.org = 'Wise' LIMIT 20
-
--- FAST (30ms, no duplicates): people_roles
-SELECT DISTINCT first, last, headline
-FROM people_roles
-WHERE org = 'Wise'
-LIMIT 20
+SELECT title, count() as c FROM people_roles
+WHERE org_slug = 'stripe' AND end IS NULL
+GROUP BY title ORDER BY c DESC LIMIT 30
 ```
 
-Only use ARRAY JOIN on `people` when you need the full nested roles array in the output.
-
-### Company name matching is noisy
-`ILIKE '%Wise%'` matches Wise, ConnectWise, WiseClick, NourishWise, etc. Be specific:
+### Combine role + person filters
 
 ```sql
--- TOO BROAD
-WHERE org ILIKE '%Wise%'
-
--- BETTER: exact match or known variations
-WHERE org IN ('Wise', 'TransferWise', 'Wise (formerly TransferWise)')
-
--- BEST: use company slug if you know it
-WHERE org_slug = 'wiseaccount'
-```
-
-To find the right slug, search for a known employee first:
-```sql
-SELECT org, org_slug FROM people_roles WHERE org ILIKE '%Wise%' LIMIT 5
-```
-
-### Combining role filters with person filters
-Use `people_roles` — it has both role and person fields in the same row:
-
-```sql
--- Find ex-Wise people who are now founders
-SELECT DISTINCT first, last, headline, loc
-FROM people_roles
+SELECT DISTINCT first, last, headline, loc FROM people_roles
 WHERE org IN ('Wise', 'TransferWise') AND end IS NOT NULL
 AND headline ILIKE '%Founder%'
 LIMIT 20
 ```
 
-## Critical Rules
+## Full Example: AML Compliance Buyers at Fintechs
 
-### Always add LIMIT
-Every query MUST have a LIMIT clause. Results are capped at 1,000 rows per query. Default to `LIMIT 20` for exploratory queries, `LIMIT 100` for exports. Use OFFSET to paginate beyond 1,000 (see Pagination section).
+This is a real session that produced 796 prospects across 295 companies.
 
-### ILIKE vs LIKE
-- `ILIKE` is case-insensitive: `ILIKE '%cto%'` matches "CTO", "cto", "Cto"
-- `LIKE` is case-sensitive: `LIKE '%CTO%'` only matches "CTO"
-- **Gotcha**: `ILIKE '%CTO%'` also matches "DireCTOr", "eleCTOral", etc. For CTO specifically, use `LIKE '%CTO%'` or add exclusions.
-
-### Locale-aware searching
-People in non-English countries use local job titles. Always include locale variants when searching by title:
-
-| English | German | French | Spanish |
-|---------|--------|--------|---------|
-| CEO | Geschäftsführer, Vorstandsvorsitzender | PDG, Directeur Général | Director General |
-| CTO | Technischer Leiter | Directeur Technique | Director Técnico |
-| CFO | Finanzvorstand | Directeur Financier, DAF | Director Financiero |
-| Founder | Gründer, Gründerin | Fondateur, Fondatrice | Fundador, Fundadora |
-| Managing Director | Geschäftsführer | Directeur Général | Director General |
-| Sales Manager | Vertriebsleiter | Directeur Commercial | Director Comercial |
-| Head of | Leiter, Leiterin | Responsable, Directeur | Jefe de, Director de |
-
-Example — finding CEOs in Germany:
+**1. Resolve org_slugs:**
 ```sql
-SELECT first, last, headline, loc FROM people
-WHERE cc = 'de' AND (
-    headline LIKE '%CEO%'
-    OR headline ILIKE '%Geschäftsführer%'
-    OR headline ILIKE '%Vorstandsvorsitzender%'
-    OR headline ILIKE '%Chief Executive%'
-)
-LIMIT 20
+SELECT org, org_slug, count() as c FROM people_roles
+WHERE org = 'Wise' AND end IS NULL
+GROUP BY org, org_slug ORDER BY c DESC
+-- wiseaccount | 2341 ← this one
 ```
 
-### Accessing roles and education
-Three patterns:
-
-**`people_roles` table** — fastest for company/role searches (100-300x faster):
+**2. Explore titles at a few targets:**
 ```sql
-SELECT first, last, title, org
-FROM people_roles
-WHERE org = 'Google' AND end IS NULL
-LIMIT 20
+SELECT title, count() as c FROM people_roles
+WHERE org_slug = 'revolut'
+AND (title ILIKE '%Compliance%' OR title ILIKE '%AML%' OR title ILIKE '%Fincrime%')
+AND end IS NULL GROUP BY title ORDER BY c DESC LIMIT 20
+-- Finding: Revolut uses "Fincrime" not "Financial Crime"
 ```
 
-**`arrayExists`** — filter people by role criteria, one row per person:
+**3. Query each company separately:**
 ```sql
-SELECT first, last, headline
-FROM people
-WHERE arrayExists(r -> r.org = 'Google', roles)
-LIMIT 20
+SELECT DISTINCT first, last, title, org, loc, slug, desc FROM people_roles
+WHERE org_slug = 'revolut'
+AND (title ILIKE '%Compliance%' OR title ILIKE '%AML%' OR title ILIKE '%Fincrime%'
+     OR title ILIKE '%Financial Crime%' OR title ILIKE '%MLRO%' OR title ILIKE '%KYC%')
+AND (title ILIKE '%Head%' OR title ILIKE '%Director%' OR title ILIKE '%VP%'
+     OR title ILIKE '%Chief%' OR title ILIKE '%Global Head%')
+AND end IS NULL LIMIT 100
 ```
 
-**Direct index** — access most recent role:
+**4. Enrich:**
 ```sql
-SELECT first, last, roles[1].title, roles[1].org
-FROM people
-WHERE cc = 'uk'
-LIMIT 20
+SELECT slug, email, bio FROM people WHERE slug IN ('slug1', ..., 'slug200')
 ```
-Note: ClickHouse arrays are 1-indexed. `roles[1]` is the most recent role.
 
-**ARRAY JOIN** — avoid unless you need full nested output. Slow on 756M rows.
+**Result**: 796 prospects, 471 at Tier 1 fintechs, with profile URLs and bios — in minutes.
+
+## Checklist
+
+```
+□ Resolve org_slugs (GROUP BY org, org_slug) — don't trust org names
+□ Explore title distributions at target companies before filtering
+□ Use DISTINCT to avoid duplicate rows
+□ Query each company separately (>5 companies = separate queries)
+□ Always SELECT slug
+□ Seniority filters: avoid %Global%, %Executive%, %Senior% alone
+□ Enrich in batches of ~200 slugs
+□ Deduplicate by slug (per person) or (slug, org_slug) (per person per company)
+□ Profile URLs: https://linkedin.com/in/{slug}
+```
+
+## Reference
+
+### Country codes
+
+Lowercase two-letter. Uses `uk` not `gb`:
+`us`, `uk`, `de`, `fr`, `at`, `ch`, `in`, `br`, `es`, `it`, `nl`, `ca`, `au`, `cn`, `id`, `mx`, `za`, `co`, `pl`, `se`, `tr`, `ae`, `sa`, `eg`, `ng`, `ke`, `sg`, `jp`, `kr`, `ph`, `my`, `th`, `vn`, `ie`, `dk`, `no`, `fi`, `pt`, `ro`, `cz`, `hu`, `il`, `ar`, `cl`, `pe`, `pk`, `bd`
 
 ### Current role
-A current role has `end IS NULL`:
-```sql
--- Using ARRAY JOIN
-WHERE r.end IS NULL
 
--- Using arrayExists
-WHERE arrayExists(r -> r.end IS NULL AND r.title ILIKE '%CTO%', roles)
+`end IS NULL` means current role:
+```sql
+WHERE end IS NULL                    -- in people_roles
+WHERE arrayExists(r -> r.end IS NULL AND r.title ILIKE '%CTO%', roles)  -- in people
+```
+
+### Accessing roles in `people` table
+
+```sql
+-- Direct index (1-indexed, most recent first)
+SELECT roles[1].title, roles[1].org FROM people WHERE cc = 'uk' LIMIT 5
+
+-- arrayExists (filter by role criteria)
+SELECT first, last FROM people WHERE arrayExists(r -> r.org = 'Google', roles) LIMIT 5
+
+-- ARRAY JOIN (slow — avoid unless needed)
+SELECT first, last, r.title FROM people ARRAY JOIN roles AS r WHERE r.org = 'Google' LIMIT 5
 ```
 
 ### NULL handling
-- Missing data is `NULL`, never empty string
-- Check with `IS NULL` / `IS NOT NULL`
-- `headline` and `bio` can be NULL — filter with `headline IS NOT NULL AND headline != ''`
 
-## Pagination
+Missing data is `NULL`, never empty string. Check with `IS NULL` / `IS NOT NULL`.
 
-Results are capped at 1,000 rows per query. If a search has more results, use `OFFSET` to paginate:
+### title vs headline
 
+| Field | Where | What it is |
+|-------|-------|-----------|
+| `title` | `people_roles` | Exact job title at a specific company |
+| `headline` | both tables | Self-written summary, often aspirational |
+
+`title` is more reliable. `headline` might say "Visionary Technology Leader" instead of "CTO".
+
+### Pagination
+
+Results capped at 1,000 rows. Use OFFSET for larger result sets:
 ```sql
--- Page 1 (first 100)
-SELECT first, last, headline, loc FROM people
-WHERE cc = 'uk' AND headline LIKE '%CTO%'
-LIMIT 100 OFFSET 0
-
--- Page 2 (next 100)
-SELECT first, last, headline, loc FROM people
-WHERE cc = 'uk' AND headline LIKE '%CTO%'
-LIMIT 100 OFFSET 100
-
--- Page 3
-LIMIT 100 OFFSET 200
-```
-
-**How to know if there are more results**: there is no pagination metadata. Run a `count()` first to know the total, then paginate:
-
-```sql
--- Step 1: how many total?
-SELECT count() FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%'
--- → 4,832
-
--- Step 2: paginate through them
 SELECT ... LIMIT 100 OFFSET 0     -- page 1
 SELECT ... LIMIT 100 OFFSET 100   -- page 2
 SELECT ... LIMIT 100 OFFSET 200   -- page 3
--- ...continue until you have all 4,832 or enough
 ```
+Run `count()` first to know how many pages. For multi-company queries, paginate per company — not with a shared OFFSET (see LIMIT starvation).
 
-Always run the count first. Don't just paginate blindly until empty results — you won't know how far to go.
+### Output
 
-## Output
+- **Terminal**: pretty-printed JSON
+- **Piped**: raw JSON lines
 
-- **Terminal**: pretty-printed JSON (one object per line)
-- **Piped**: raw JSON lines (for jq, scripts, files)
-
+When piping to files, filter non-JSON lines (update notices):
 ```bash
-# Save to file
-speaker query "SELECT ..." > results.json
-
-# Pipe to jq
-speaker query "SELECT first, last FROM people WHERE cc = 'uk' LIMIT 5" | jq '.first'
-
-# Count results
-speaker query "SELECT first FROM people WHERE cc = 'de' LIMIT 100" | wc -l
+speaker query "SELECT ..." | grep '^\{' > clean.json
 ```
 
-## Data Coverage
+### Data coverage
 
 756M+ profiles across 244 countries. Top 15:
 
@@ -558,7 +551,8 @@ speaker query "SELECT first FROM people WHERE cc = 'de' LIMIT 100" | wc -l
 | Turkey | tr | 11M |
 | Colombia | co | 10M |
 
-### Field coverage (varies by country, UK example)
+### Field coverage (UK example)
+
 | Field | Coverage |
 |-------|----------|
 | first, last, slug, loc, cc | 100% |
@@ -566,4 +560,12 @@ speaker query "SELECT first FROM people WHERE cc = 'de' LIMIT 100" | wc -l
 | bio | ~22% |
 | roles (at least one) | ~71% |
 | edu (at least one) | ~41% |
-| email | Limited |
+| email | Near zero for senior/enterprise roles |
+
+### Limits
+
+| Limit | Value |
+|-------|-------|
+| Max rows per query | 1,000 |
+| Max queries per second | 5 |
+| Max queries per day | 5,000 |

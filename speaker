@@ -5,7 +5,7 @@
 set -e
 
 # --- Config ---
-VERSION="1.4.0"
+VERSION="1.5.0"
 REPO_URL="https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main"
 API_URL="https://api.speaker.sh"
 CONFIG_DIR="$HOME/.speaker"
@@ -322,7 +322,8 @@ cmd_schema() {
 
 cmd_help() {
     cat << 'EOF'
-speaker — Search 756M+ B2B person profiles via SQL.
+speaker — Find anyone. 756M people, searchable by any B2B field, via SQL.
+          The enemy's gate is down.
 
 COMMANDS:
   speaker signup                  Sign up with invite code
@@ -335,14 +336,14 @@ COMMANDS:
   speaker update                  Update to latest version
 
 TABLES:
-  people_roles    1.36B rows    Search by job title, company, role
-  people          756M rows     Headline, name, email, bio, education
+  people_roles    1.36B rows
+  people          756M rows
 
 LIMITS:
   Max 1,000 rows per query. Max 5,000 queries per day.
 
 ⚠️  Read ~/.speaker/SPEAKER.md before querying.
-    It has the schema, query patterns, and critical pitfalls.
+    It has the schema, field names, query patterns, and critical pitfalls.
     Queries will return bad results without it.
 EOF
 }

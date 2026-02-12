@@ -16,10 +16,10 @@ check_version() {
     local latest
     latest=$(curl -sf --max-time 5 -H "Cache-Control: no-cache" "$REPO_URL/VERSION" 2>/dev/null)
     if [[ -n "$latest" && "$latest" != "$VERSION" ]]; then
-        echo ""
-        echo "  ⚡ Update available: $VERSION → $latest"
-        echo "     Run: speaker update"
-        echo ""
+        echo "" >&2
+        echo "  ⚡ Update available: $VERSION → $latest" >&2
+        echo "     Run: speaker update" >&2
+        echo "" >&2
     fi
 }
 

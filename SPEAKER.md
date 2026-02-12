@@ -524,10 +524,7 @@ Run `count()` first to know how many pages. For multi-company queries, paginate 
 - **Terminal**: pretty-printed JSON
 - **Piped**: raw JSON lines
 
-When piping to files, filter non-JSON lines (update notices):
-```bash
-speaker query "SELECT ..." | grep '^\{' > clean.json
-```
+**Note**: piped output may include non-JSON lines (e.g. update notices). Filter when parsing.
 
 ### Data coverage
 

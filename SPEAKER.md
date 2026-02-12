@@ -5,23 +5,30 @@ A CLI tool for searching 756M+ B2B person profiles via SQL. Run `speaker query "
 ## Quick Reference
 
 ```bash
-speaker signup            # Create account (pending approval)
-speaker status            # Check if approved (auto-saves API key)
-speaker query "SQL"       # Run a query
-speaker count             # Total profiles
-speaker schema            # Show table structure
-speaker update            # Update CLI to latest version
-speaker help              # All commands
+speaker signup                        # Sign up with invite code (interactive)
+speaker signup email@x.com INV-xxx    # Sign up non-interactively (agent-friendly)
+speaker login <api-key>               # Log in on another machine
+speaker query "SQL"                   # Run a query
+speaker count                         # Total profiles
+speaker schema                        # Show table structure
+speaker update                        # Update CLI to latest version
+speaker help                          # All commands
 ```
 
 ## Account Setup
 
-New accounts require approval. The flow:
+Speaker is invite-only. You need an invite code to sign up.
 
 ```bash
-speaker signup            # Enter email + password → account is pending
-speaker status            # Check back later → once approved, API key is saved automatically
-speaker query "SELECT ..." # Start searching
+speaker signup                        # Prompts for email + invite code
+speaker signup you@x.com INV-abc123   # Non-interactive (for agents)
+```
+
+On signup, your API key is saved to `~/.speaker/config` and you can query immediately — no approval wait.
+
+To log in on another machine or after a fresh install, use your API key:
+```bash
+speaker login <your-api-key>
 ```
 
 ## Table: `people_roles` ⭐ PRIMARY TABLE

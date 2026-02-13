@@ -1,8 +1,50 @@
-# Speaker — B2B Person Search
+# Speaker — B2B Person & Company Search
 
-756M+ person profiles. Query any combination of fields — job title, company, location, headline, education, bio, and more. Full SQL access via `speaker query`.
+756 million people. 17 million companies. Query any combination of fields — job title, company, location, headline, headcount, industry, revenue, and more. Full SQL access via `speaker query`.
 
 Use it however you want. Sales prospecting, market research, recruiting, competitive analysis, or things we haven't thought of yet. This doc is guidance based on what we've learned so far — not rules. The data is yours to explore.
+
+## How the tables fit together
+
+Four tables, two layers: **search** then **enrich**.
+
+```
+SEARCH (flat, fast)                     ENRICH (rich, detailed)
+─────────────────────                   ───────────────────────
+people_roles  1.36B rows                people          756M rows
+  → title, org, slug, cc                  → full roles[] history, edu[], bio, email
+                        ── slug ──▶
+companies     17M rows                  companies_full  17M rows
+  → name, headcount, industry, cc         → headcount timeseries, dept breakdown, funding
+                        ── slug ──▶
+```
+
+**Search first, enrich second.** Find who or what you're looking for in the flat tables. Then use the slug to get the full picture.
+
+### What enrichment gives you
+
+**People enrichment** — after finding someone in `people_roles`, look them up in `people` by slug to get:
+- **Full work history** (`roles[]` array) — every role they've held, not just the one you matched on. See their career trajectory, how long they stay at companies, what industries they've moved through.
+- **Education** (`edu[]` array) — schools, degrees.
+- **Bio** — self-written summary, useful for qualification and personalization.
+- **Email** — where available (coverage is low for senior roles at large companies).
+
+```sql
+-- Found someone interesting in people_roles? Get their full story:
+SELECT slug, bio, email, roles, edu FROM people WHERE slug = 'micriedler'
+```
+
+**Company enrichment** — after finding a company in `companies`, look it up in `companies_full` by slug to get:
+- **Headcount over time** — weekly timeseries, see if they're growing or shrinking.
+- **Department breakdown** — how many in Engineering vs Sales vs Marketing.
+- **Skills map** — what technologies/skills the workforce has.
+- **Funding** — total raised, last round, investor names.
+
+```sql
+-- Found an interesting company? Get the deep data:
+SELECT headcount_ts, headcount_by_function, funding_total, funding_investors
+FROM companies_full WHERE slug = 'stripe'
+```
 
 ## Quick Reference
 
@@ -29,7 +71,7 @@ API key saved to `~/.speaker/config` on signup. To log in elsewhere: `speaker lo
 
 ## Tables
 
-### `people_roles` ⭐ PRIMARY TABLE
+### `people_roles` ⭐ PRIMARY TABLE FOR PERSON SEARCH
 
 One row per person-role. 1.36B rows. Sorted by company name.
 
@@ -48,9 +90,9 @@ One row per person-role. 1.36B rows. Sorted by company name.
 | `headline` | String | Professional headline |
 | `loc` | String | Location |
 
-### `people` — enrichment & everything else
+### `people` — person enrichment & everything else
 
-756M profiles. One row per person.
+756 million profiles. One row per person.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -65,6 +107,47 @@ One row per person-role. 1.36B rows. Sorted by company name.
 | `roles` | Array(Tuple) | Work history — `title`, `org`, `slug`, `web`, `cc`, `start`, `end`, `desc` |
 | `edu` | Array(Tuple) | Education — `school`, `deg`, `slug` |
 
+### `companies` — company search table
+
+17 million company profiles. One row per company. Flat fields for fast filtering.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | String | Company name |
+| `slug` | String | Company identifier (matches `org_slug` in people_roles) |
+| `web` | Nullable(String) | Website domain (no protocol) |
+| `desc` | Nullable(String) | Company description (max 200 chars) |
+| `cc` | LowCardinality(String) | HQ country code (lowercase) |
+| `hq` | Nullable(String) | Headquarters location string |
+| `founded` | Nullable(UInt16) | Year founded |
+| `type` | Nullable(String) | `"Privately Held"`, `"Public Company"`, `"Nonprofit"`, etc. |
+| `industry` | Nullable(String) | Primary industry |
+| `industries` | Array(String) | All industries (primary + sub-industries) |
+| `headcount` | Nullable(UInt32) | Current employee count |
+| `revenue_min` | Nullable(UInt64) | Estimated annual revenue lower bound (USD) |
+| `revenue_max` | Nullable(UInt64) | Estimated annual revenue upper bound (USD) |
+| `updated` | Date | Last refreshed |
+
+### `companies_full` — company enrichment table
+
+Same 17 million companies with timeseries, breakdowns, and deep data. Query by slug for single-company deep dives.
+
+All fields from `companies`, plus:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `headcount_ts` | Array(Tuple(date, count)) | Weekly headcount timeseries |
+| `headcount_growth` | Tuple(mom, qoq, yoy) | Growth rates (%) |
+| `headcount_by_function` | Map(String, UInt32) | `{"Engineering":450,"Sales":200}` |
+| `headcount_by_location` | Map(String, UInt32) | `{"New York":300,"London":150}` |
+| `headcount_by_skill` | Map(String, UInt32) | `{"Python":120,"AWS":95}` |
+| `revenue_ts` | Array(Tuple(date, min, max)) | Monthly revenue range timeseries |
+| `funding_total` | Nullable(UInt64) | Total funding raised (USD) |
+| `funding_last_round` | Nullable(String) | `"series_b"`, `"seed"`, `"post_ipo_debt"` |
+| `funding_investors` | Array(String) | `["Sequoia","a16z"]` |
+| `traffic_rank` | Nullable(UInt32) | Global web traffic rank |
+| `seo_organic_rank` | Nullable(Float32) | Average organic search rank |
+
 ### Which table to use
 
 | If your search involves... | Use | Why |
@@ -74,8 +157,32 @@ One row per person-role. 1.36B rows. Sorted by company name.
 | Headline search | `people` | No role needed |
 | Name lookup | `people` | Name + country |
 | Email, bio, education | `people` | Only here |
+| Find companies by industry, headcount, revenue | `companies` | Flat fields, fast |
+| Company headcount trends, department breakdown | `companies_full` | Timeseries data |
+| Funding, investors | `companies_full` | Sparse but valuable |
+| **Find people at specific types of companies** | **Two-step** | **See below** |
 
-**Rule of thumb**: title or company → `people_roles`. Everything else → `people`.
+**Rule of thumb**: title or company → `people_roles`. Headline/bio/edu → `people`. Company search → `companies`. Deep dive → `companies_full`.
+
+### Two-step pattern: companies + people
+
+Direct JOINs between people (756 million) and companies (17 million) will timeout. Use a two-step approach:
+
+```sql
+-- Step 1: Find target companies
+SELECT name, slug, headcount FROM companies
+WHERE cc = 'de' AND headcount > 500 AND industry = 'Software Development'
+
+-- Step 2: Find people at those companies (using the slug from step 1)
+SELECT DISTINCT first, last, title, org, slug FROM people_roles
+WHERE org_slug = 'sap' AND title LIKE '%CTO%' AND end IS NULL
+
+-- Step 3 (optional): Get deep company data
+SELECT headcount_by_function, funding_total, funding_investors
+FROM companies_full WHERE slug = 'sap'
+```
+
+This is the natural agent workflow: search companies → find people → enrich both.
 
 ## Critical Rules
 
@@ -384,6 +491,62 @@ Bio (~20-60% coverage) is useful for qualification and personalization.
 
 These cover common use cases beyond prospecting.
 
+### Company search
+
+```sql
+-- Software companies in Germany with 100+ employees
+SELECT name, slug, headcount, industry, revenue_min FROM companies
+WHERE cc = 'de' AND headcount > 100 AND industry = 'Software Development'
+ORDER BY headcount DESC
+
+-- High-revenue companies
+SELECT name, slug, revenue_min, headcount FROM companies
+WHERE revenue_min > 100000000 ORDER BY revenue_min DESC
+
+-- Recently founded companies with traction
+SELECT name, slug, founded, headcount, industry, cc FROM companies
+WHERE founded >= 2020 AND headcount >= 50
+ORDER BY headcount DESC
+
+-- Industry breakdown by country
+SELECT industry, count() as n, avg(headcount) as avg_hc FROM companies
+WHERE cc = 'at' AND headcount > 50
+GROUP BY industry ORDER BY n DESC
+```
+
+### Company deep dives
+
+```sql
+-- Department breakdown
+SELECT headcount_by_function FROM companies_full WHERE slug = 'datadog'
+
+-- Headcount trend over time
+SELECT headcount_ts FROM companies_full WHERE slug = 'stripe'
+
+-- Funding and investors
+SELECT funding_total, funding_last_round, funding_investors
+FROM companies_full WHERE slug = 'revolut'
+
+-- Revenue trajectory
+SELECT revenue_ts FROM companies_full WHERE slug = 'sap'
+```
+
+### Find people at companies matching criteria
+
+```sql
+-- Step 1: Find fintech companies in UK with 500+ headcount
+SELECT name, slug, headcount FROM companies
+WHERE cc = 'uk' AND headcount > 500
+AND (industry ILIKE '%fintech%' OR industry ILIKE '%financial%')
+
+-- Step 2: Find compliance leaders at one of them
+SELECT DISTINCT first, last, title, org, slug FROM people_roles
+WHERE org_slug = 'revolut'
+AND (title ILIKE '%Compliance%' OR title ILIKE '%AML%')
+AND (title ILIKE '%Head%' OR title ILIKE '%Director%' OR title ILIKE '%VP%')
+AND end IS NULL
+```
+
 ### Company alumni — where did they go?
 
 ```sql
@@ -499,6 +662,7 @@ SELECT slug, email, bio FROM people WHERE slug IN ('slug1', ..., 'slug200')
 
 ## Checklist
 
+### People searches
 ```
 □ Resolve org_slugs (GROUP BY org, org_slug) — don't trust org names
 □ Explore title distributions at target companies before filtering
@@ -509,6 +673,16 @@ SELECT slug, email, bio FROM people WHERE slug IN ('slug1', ..., 'slug200')
 □ Enrich in batches of ~200 slugs
 □ Deduplicate by slug (per person) or (slug, org_slug) (per person per company)
 □ Profile URLs: https://linkedin.com/in/{slug}
+```
+
+### Company searches
+```
+□ Use companies for search (flat, fast), companies_full for deep dives (by slug)
+□ Don't JOIN people + companies directly — use two-step pattern
+□ industry is primary, industries is the full array
+□ revenue_min / revenue_max are estimates — use ranges, not exact values
+□ headcount_by_function, headcount_by_location are Maps — use mapKeys() to list available keys
+□ founded year can be unreliable for older companies — may reflect page creation date
 ```
 
 ## Reference
@@ -571,7 +745,9 @@ Run `count()` first to know how many pages. For multi-company queries, paginate 
 
 ### Data coverage
 
-756M+ profiles across 244 countries. Top 15:
+756 million person profiles across 244 countries. 17 million company profiles.
+
+**People — Top 15 countries:**
 
 | Country | Code | Profiles |
 |---------|------|----------|
@@ -591,7 +767,23 @@ Run `count()` first to know how many pages. For multi-company queries, paginate 
 | Turkey | tr | 11M |
 | Colombia | co | 10M |
 
-### Field coverage (UK example)
+**Companies — field coverage:**
+
+| Field | Coverage |
+|-------|----------|
+| name, slug | 100% |
+| desc | 93% |
+| headcount | 91% |
+| cc (country) | 80% |
+| web (domain) | 79% |
+| industry | 69% |
+| hq | 67% |
+| founded | 50% |
+| revenue | 46% |
+| headcount_by_function | 77% |
+| funding | 1.2% (sparse, but valuable when present) |
+
+### People — field coverage (UK example)
 
 | Field | Coverage |
 |-------|----------|

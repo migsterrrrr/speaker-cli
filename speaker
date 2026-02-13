@@ -271,45 +271,43 @@ cmd_schema() {
     check_auth
     local key=$(get_key)
     echo ""
-    echo "TABLE: people"
+    echo "SEARCH (flat, fast)                     ENRICH (rich, detailed)"
+    echo "─────────────────────                   ───────────────────────"
+    echo "people_roles  1.36B rows                people          756M rows"
+    echo "  → title, org, slug, cc                  → full roles[] history, edu[], bio, email"
+    echo "                        ── slug ──▶"
+    echo "companies     17M rows                  companies_full  17M rows"
+    echo "  → name, headcount, industry, cc         → headcount timeseries, dept breakdown, funding"
+    echo "                        ── slug ──▶"
     echo ""
-    echo "PERSON FIELDS:"
-    echo "  first        String       First name"
-    echo "  last         String       Last name"
-    echo "  slug         String       Unique profile identifier"
-    echo "  headline     String       Current professional headline"
-    echo "  loc          String       Location (city, country)"
-    echo "  cc           String       Country code (lowercase: us, uk, de, fr)"
-    echo "  email        String       Email address (where available)"
-    echo "  bio          String       Short bio (max 200 chars)"
+    echo "PEOPLE FIELDS:"
+    echo "  first, last, slug, headline, loc, cc, email, bio"
+    echo "  roles[]: title, org, slug, web, cc, start, end, desc"
+    echo "  edu[]: school, deg, slug"
     echo ""
-    echo "ROLES (work history array — most recent first):"
-    echo "  roles[].title    Job title"
-    echo "  roles[].org      Company name"
-    echo "  roles[].slug     Company identifier"
-    echo "  roles[].web      Company website domain"
-    echo "  roles[].cc       Country code of role"
-    echo "  roles[].start    Start date (YYYY-MM)"
-    echo "  roles[].end      End date (YYYY-MM, NULL = current)"
-    echo "  roles[].desc     Role description (max 120 chars)"
+    echo "COMPANY FIELDS:"
+    echo "  name, slug, web, desc, cc, hq, founded, type"
+    echo "  industry, industries[], headcount, revenue_min, revenue_max, updated"
     echo ""
-    echo "EDUCATION (array):"
-    echo "  edu[].school     Institution name"
-    echo "  edu[].deg        Degree and field"
-    echo "  edu[].slug       Institution identifier"
+    echo "COMPANY ENRICHMENT (companies_full):"
+    echo "  headcount_ts, headcount_growth, headcount_by_function, headcount_by_location"
+    echo "  headcount_by_skill, revenue_ts, funding_total, funding_last_round"
+    echo "  funding_investors, traffic_rank, seo_organic_rank"
     echo ""
     echo "NOTES:"
     echo "  - Country codes are lowercase: us, uk, de, fr, at, ch, in, br"
     echo "  - 'uk' not 'gb' for United Kingdom"
     echo "  - Current role: roles[1] or WHERE r.end IS NULL"
     echo "  - ILIKE '%CTO%' also matches 'Director' — use LIKE for exact"
+    echo "  - Search first (people_roles, companies), enrich second (people, companies_full)"
+    echo "  - Don't JOIN people + companies directly — use two-step pattern (see SPEAKER.md)"
     echo ""
 
     local resp
     resp=$(curl -sf "$API_URL/query" \
         -H "X-API-Key: $key" \
         -d "SELECT cc, count() as profiles FROM people GROUP BY cc ORDER BY profiles DESC LIMIT 15")
-    echo "TOP COUNTRIES:"
+    echo "TOP COUNTRIES (people):"
     echo "$resp" | while IFS= read -r line; do
         local cc=$(echo "$line" | grep -o '"cc":"[^"]*"' | cut -d'"' -f4)
         local cnt=$(echo "$line" | grep -o '"profiles":[0-9]*' | cut -d: -f2)
@@ -322,7 +320,7 @@ cmd_schema() {
 
 cmd_help() {
     cat << 'EOF'
-speaker — Find anyone. 756M people, searchable by any B2B field, via SQL.
+speaker — 756 million people + 17 million companies, searchable via SQL.
           The enemy's gate is down.
 
 COMMANDS:
@@ -336,8 +334,10 @@ COMMANDS:
   speaker update                  Update to latest version
 
 TABLES:
-  people_roles    1.36B rows
-  people          756M rows
+  people_roles    1.36B rows     Search: one row per person-role (fast)
+  companies       17M rows       Search: company profiles (flat, fast)
+  people          756M rows      Enrich: full person record (roles, edu, bio, email)
+  companies_full  17M rows       Enrich: company detail (timeseries, breakdowns, funding)
 
 LIMITS:
   Max 1,000 rows per query. Max 5,000 queries per day.

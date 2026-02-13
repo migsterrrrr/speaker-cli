@@ -69,32 +69,30 @@ speaker help            Help
 
 Public data only. Use it however you want.
 
----
-
 <div align="center">
 <br>
-<pre>
+<i>
 When you free a human from thinking,
-we don't stop.
-
-We feel more.
-We become braver.
-We become kinder.
-
+<br>we don't stop.
+<br>We feel more.
+<br>We become braver.
+<br>We become kinder.
+<br><br>
 Somewhere in the chain,
-between the signal and the playbook,
-there must be a moment
-where a human looks at another human
-and says:
-
-<i>I see you.</i>
-
+<br>between the signal and the playbook,
+<br>there must be a moment
+<br>where a human looks at another human
+<br>and says:
+<br><br>
+<b>I see you.</b>
+<br><br>
 Not your title.
-Not your company.
-Not your MQL score.
-
-<i>You.</i>
-
-                              — speaker.sh
-</pre>
+<br>Not your company.
+<br>Not your MQL score.
+<br><br>
+<b>You.</b>
+<br><br>
+— speaker.sh
+</i>
+<br>
 </div>

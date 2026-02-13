@@ -1,197 +1,95 @@
 # speaker
 
-Search 756M+ B2B person profiles from your terminal. SQL-native. Public data only.
-
-## Install
+756 million people. 17 million companies. One SQL query away.
 
 ```bash
 curl -sL https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main/install.sh | sh
 ```
 
-Or manually:
+## What this is
+
+A database of the professional world. People, where they work, where they worked, what they do. Companies, how big they are, what industry, how fast they're growing.
+
+Search it with SQL. From your terminal. No browser, no UI, no API wrapper — just queries in, answers out.
 
 ```bash
-curl -sL https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main/speaker -o /usr/local/bin/speaker
-chmod +x /usr/local/bin/speaker
+speaker query "SELECT name, headcount, industry FROM companies WHERE cc = 'de' AND headcount > 1000 ORDER BY headcount DESC LIMIT 10"
+```
+
+```bash
+speaker query "SELECT first, last, title, org FROM people_roles WHERE org_slug = 'stripe' AND title LIKE '%CTO%' AND end IS NULL"
 ```
 
 ## Get started
 
-Speaker is invite-only. You need an invite code to sign up.
+Speaker is invite-only. You need an invite code.
 
 ```bash
-# Sign up with your invite code
 speaker signup
-
-# Or non-interactively (agent-friendly)
-speaker signup you@example.com YOUR-INVITE-CODE
-
-# Start searching immediately — no approval wait
-speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
 ```
 
-Your API key is saved to `~/.speaker/config` on signup. If you need to log in on another machine, use:
+Your API key is saved on signup. Start querying immediately.
+
+## What's in the box
+
+| Table | Rows | What it is |
+|-------|------|-----------|
+| `people` | 756 million | Person profiles — name, headline, location, bio, work history, education |
+| `people_roles` | 1.36 billion | One row per person-role — fast search by job title and company |
+| `companies` | 17 million | Company profiles — name, headcount, industry, revenue, HQ |
+| `companies_full` | 17 million | Same companies with timeseries, department breakdowns, funding |
+
+## Docs
+
+Everything you need to write queries — schema, field names, patterns, pitfalls:
 
 ```bash
-speaker login <your-api-key>
+cat ~/.speaker/SPEAKER.md
 ```
+
+Or read it on GitHub: [SPEAKER.md](SPEAKER.md)
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `speaker signup` | Sign up with an invite code (interactive) |
-| `speaker signup <email> <code>` | Sign up non-interactively (agent-friendly) |
-| `speaker login <key>` | Log in with an API key on another machine |
-| `speaker query "SQL"` | Run a query |
-| `speaker count` | Total profiles |
-| `speaker schema` | Show table structure |
-| `speaker logout` | Remove credentials |
-| `speaker update` | Update to latest version |
-| `speaker help` | Help |
-
-## Schema
-
-### `people` table
-
-**Person fields**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `first` | String | First name |
-| `last` | String | Last name |
-| `slug` | String | Unique profile identifier |
-| `headline` | String | Professional headline |
-| `loc` | String | Location (city, country) |
-| `cc` | String | Country code (`us`, `uk`, `de`, `fr`, etc.) |
-| `email` | String | Email (where available) |
-| `bio` | String | Short bio |
-
-**Work history** — `roles` array, most recent first
-
-| Field | Description |
-|-------|-------------|
-| `roles[].title` | Job title |
-| `roles[].org` | Company name |
-| `roles[].slug` | Company identifier |
-| `roles[].web` | Company website |
-| `roles[].cc` | Country of role |
-| `roles[].start` | Start date (YYYY-MM) |
-| `roles[].end` | End date (YYYY-MM, NULL = current) |
-| `roles[].desc` | Role description |
-
-**Education** — `edu` array
-
-| Field | Description |
-|-------|-------------|
-| `edu[].school` | Institution |
-| `edu[].deg` | Degree and field |
-| `edu[].slug` | Institution identifier |
-
-## Examples
-
-```bash
-# CTOs in Germany
-speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'de' AND headline LIKE '%CTO%' LIMIT 20"
-
-# People currently at Google
-speaker query "SELECT first, last, r.title, r.org FROM people ARRAY JOIN roles AS r WHERE r.org ILIKE '%Google%' AND r.end IS NULL LIMIT 20"
-
-# Founders in the UK
-speaker query "SELECT first, last, headline, loc FROM people WHERE cc = 'uk' AND headline ILIKE '%founder%' LIMIT 20"
-
-# Country distribution
-speaker query "SELECT cc, count() as c FROM people GROUP BY cc ORDER BY c DESC LIMIT 20"
-
-# People who worked at Deloitte but now work somewhere else
-speaker query "SELECT first, last, headline, loc FROM people WHERE arrayExists(r -> r.org ILIKE '%Deloitte%' AND r.end IS NOT NULL, roles) AND cc = 'uk' LIMIT 20"
-
-# Export to JSON
-speaker query "SELECT first, last, headline FROM people WHERE cc = 'fr' LIMIT 100" > france.json
-
-# Pipe to jq
-speaker query "SELECT first, last FROM people WHERE cc = 'us' LIMIT 5" | jq '.first'
 ```
-
-## Coverage
-
-756M+ profiles across 244 countries. Strongest coverage:
-
-| Region | Profiles |
-|--------|----------|
-| North America | 215M |
-| Europe (West) | 131M |
-| South America | 100M |
-| South Asia | 96M |
-| East & SE Asia | 87M |
-| MENA | 32M |
-| Sub-Saharan Africa | 32M |
+speaker signup          Sign up with invite code
+speaker query "SQL"     Run a query
+speaker schema          Show table structure
+speaker count           Total profiles
+speaker update          Update to latest version
+speaker help            Help
+```
 
 ## Limits
 
 | Limit | Value |
 |-------|-------|
 | Max rows per query | 1,000 |
-| Max queries per second | 5 |
 | Max queries per day | 5,000 |
 
-For result sets larger than 1,000, use `OFFSET` to paginate:
+Public data only. Use it however you want.
 
-```bash
-speaker query "SELECT ... LIMIT 100 OFFSET 0"    # page 1
-speaker query "SELECT ... LIMIT 100 OFFSET 100"   # page 2
-```
+---
 
-## Tables
-
-| Table | Rows | Use for |
-|-------|------|---------|
-| `people_roles` ⭐ | 1.36B | **Start here.** Search by job title, company, role. |
-| `people` | 756M | Headline, country, education, name lookups, email/bio enrichment. |
-
-```bash
-# Find CTOs in London — search by title in people_roles
-speaker query "SELECT first, last, title, org FROM people_roles WHERE title ILIKE '%CTO%' AND cc = 'uk' AND loc ILIKE '%London%' AND end IS NULL LIMIT 20"
-
-# Search by company
-speaker query "SELECT first, last, title, org FROM people_roles WHERE org = 'Google' AND end IS NULL LIMIT 20"
-
-# Search by headline — use people
-speaker query "SELECT first, last, headline FROM people WHERE cc = 'uk' AND headline LIKE '%CTO%' LIMIT 20"
-```
-
-## How it works
-
-Speaker is built for **iterative search** — start broad, refine, export. Don't write the perfect query first. Explore.
-
-```
-1. Scope     → SELECT count() FROM people_roles WHERE org ILIKE '%NHS%'
-2. Explore   → SELECT title, count() ... GROUP BY title ORDER BY c DESC
-3. Refine    → Add filters: title, location, current/past role
-4. Export    → LIMIT 100 OFFSET 0, OFFSET 100, ...
-5. Enrich   → SELECT email, bio FROM people WHERE slug IN (...)
-```
-
-## Tips
-
-- **Search by job title**: `title` in `people_roles` is the most precise field. Use it for "find me CTOs", "VP Sales", etc.
-- **`title` vs `headline`**: `title` = actual job title at a company. `headline` = self-written summary. Title is more reliable.
-- **Use `people_roles` for title + company searches**: 100-300x faster than ARRAY JOIN. Indexed by company name.
-- **Use `people` for everything else**: headline searches, name lookups, education, email/bio enrichment.
-- **Company matching**: `ILIKE '%Wise%'` matches ConnectWise, WiseClick, etc. Use exact match (`org = 'Wise'`) or slug (`org_slug = 'wiseaccount'`).
-- **Pagination**: Run `count()` first to know total results, then paginate with `LIMIT`/`OFFSET`.
-
-## Notes
-
-- Country codes are **lowercase**: `us`, `uk`, `de`, `fr`, `at`, `ch`
-- UK uses `uk` not `gb`
-- Dates are `YYYY-MM` format
-- `ILIKE '%CTO%'` also matches "Director" — use `LIKE` for case-sensitive
-- Current role = `roles[1]` or `WHERE r.end IS NULL`
-- All data sourced from public B2B records.
-
-## Requirements
-
-- macOS or Linux
-- `curl` (pre-installed on both)
-- That's it. No runtimes, no dependencies.
+> When you free a human from thinking,
+> we don't stop.
+>
+> We feel more.
+> We become braver.
+> We become kinder.
+>
+> Somewhere in the chain,
+> between the signal and the playbook,
+> there must be a moment
+> where a human looks at another human
+> and says:
+>
+> *I see you.*
+>
+> Not your title.
+> Not your company.
+> Not your MQL score.
+>
+> *You.*
+>
+> — speaker.sh

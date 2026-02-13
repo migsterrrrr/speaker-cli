@@ -71,25 +71,30 @@ Public data only. Use it however you want.
 
 ---
 
-> When you free a human from thinking,
-> we don't stop.
->
-> We feel more.
-> We become braver.
-> We become kinder.
->
-> Somewhere in the chain,
-> between the signal and the playbook,
-> there must be a moment
-> where a human looks at another human
-> and says:
->
-> *I see you.*
->
-> Not your title.
-> Not your company.
-> Not your MQL score.
->
-> *You.*
->
-> — speaker.sh
+<div align="center">
+<br>
+<pre>
+When you free a human from thinking,
+we don't stop.
+
+We feel more.
+We become braver.
+We become kinder.
+
+Somewhere in the chain,
+between the signal and the playbook,
+there must be a moment
+where a human looks at another human
+and says:
+
+<i>I see you.</i>
+
+Not your title.
+Not your company.
+Not your MQL score.
+
+<i>You.</i>
+
+                              — speaker.sh
+</pre>
+</div>

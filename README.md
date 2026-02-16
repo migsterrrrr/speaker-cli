@@ -2,10 +2,6 @@
 
 756 million people. 17 million companies. One SQL query away.
 
-```bash
-curl -sL https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main/install.sh | sh
-```
-
 ## What this is
 
 A database of the professional world. People, where they work, where they worked, what they do. Companies, how big they are, what industry, how fast they're growing.
@@ -16,48 +12,47 @@ Search it with SQL. From your terminal. No browser, no UI, no API wrapper — ju
 speaker query "SELECT name, headcount, industry FROM companies WHERE cc = 'de' AND headcount > 1000 ORDER BY headcount DESC LIMIT 10"
 ```
 
+## What's in the box
+
+| Layer | Table | Rows | What it is |
+|-------|-------|------|-----------|
+| Search | `people_roles` | 1.36 billion | One row per person-role — fast search by title, company, location |
+| Search | `companies` | 17 million | Company profiles — headcount, industry, revenue, HQ |
+| Enrich | `people` | 756 million | Full person record — work history, education, bio, email |
+| Enrich | `companies_full` | 17 million | Company detail — headcount timeseries, department breakdown, funding |
+
+Search first, enrich second. Full schema in [SPEAKER.md](SPEAKER.md).
+
+## Install
+
 ```bash
-speaker query "SELECT first, last, title, org FROM people_roles WHERE org_slug = 'stripe' AND title LIKE '%CTO%' AND end IS NULL"
+curl -sL https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main/install.sh | sh
+```
+
+Custom install directory:
+```bash
+curl -sL https://raw.githubusercontent.com/migsterrrrr/speaker-cli/main/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
 ## Get started
 
-Speaker is invite-only. You need an invite code.
+Speaker is invite-only.
 
 ```bash
 speaker signup
 ```
 
-Your API key is saved on signup. Start querying immediately.
-
-## What's in the box
-
-| Table | Rows | What it is |
-|-------|------|-----------|
-| `people` | 756 million | Person profiles — name, headline, location, bio, work history, education |
-| `people_roles` | 1.36 billion | One row per person-role — fast search by job title and company |
-| `companies` | 17 million | Company profiles — name, headcount, industry, revenue, HQ |
-| `companies_full` | 17 million | Same companies with timeseries, department breakdowns, funding |
-
-## Docs
-
-Everything you need to write queries — schema, field names, patterns, pitfalls:
-
-```bash
-cat ~/.speaker/SPEAKER.md
-```
-
-Or read it on GitHub: [SPEAKER.md](SPEAKER.md)
-
 ## Commands
 
 ```
 speaker signup          Sign up with invite code
+speaker login <key>     Log in on another machine
 speaker query "SQL"     Run a query
 speaker schema          Show table structure
 speaker count           Total profiles
 speaker update          Update to latest version
-speaker help            Help
+speaker logout          Remove credentials
+speaker help            Quick reference
 ```
 
 ## Limits
@@ -66,8 +61,6 @@ speaker help            Help
 |-------|-------|
 | Max rows per query | 1,000 |
 | Max queries per day | 5,000 |
-
-Public data only. Use it however you want.
 
 <div align="center">
 <br>

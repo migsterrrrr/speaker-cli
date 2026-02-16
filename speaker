@@ -25,9 +25,12 @@ check_version() {
 
 cmd_update() {
     echo "Updating speaker CLI..."
-    curl -sL "$REPO_URL/speaker" -o /usr/local/bin/speaker
+    curl --fail --show-error --silent --location "$REPO_URL/speaker" -o /usr/local/bin/speaker
     chmod +x /usr/local/bin/speaker
-    curl -sL "$REPO_URL/SPEAKER.md" -o "$CONFIG_DIR/SPEAKER.md" 2>/dev/null
+    mkdir -p "$CONFIG_DIR"
+    if ! curl --fail --show-error --silent --location "$REPO_URL/SPEAKER.md" -o "$CONFIG_DIR/SPEAKER.md"; then
+        echo "Warning: updated CLI, but failed to refresh $CONFIG_DIR/SPEAKER.md" >&2
+    fi
     local new_ver=$(grep '^VERSION=' /usr/local/bin/speaker | cut -d'"' -f2)
     echo "✓ Updated to v${new_ver}"
 }
@@ -78,11 +81,9 @@ cmd_signup() {
     fi
 
     local resp
-    resp=$(curl -sf "$API_URL/signup" \
+    if ! resp=$(curl --fail --show-error --silent "$API_URL/signup" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\",\"invite_code\":\"$invite_code\"}" 2>&1)
-
-    if [[ $? -ne 0 ]]; then
+        -d "{\"email\":\"$email\",\"invite_code\":\"$invite_code\"}" 2>&1); then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
         echo "Error: ${detail:-signup failed}"
         exit 1
@@ -125,8 +126,10 @@ cmd_login() {
     # Accept key directly: speaker login sk-abc123
     if [[ -n "$1" ]]; then
         # Validate the key
-        local resp
-        resp=$(curl -sf "$API_URL/health" -H "X-API-Key: $1" 2>&1)
+        if ! curl --fail --show-error --silent "$API_URL/health" -H "X-API-Key: $1" >/dev/null 2>&1; then
+            echo "Error: invalid API key or service unavailable"
+            exit 1
+        fi
         mkdir -p "$CONFIG_DIR"
         echo "$1" > "$CONFIG_FILE"
         chmod 600 "$CONFIG_FILE"
@@ -141,12 +144,11 @@ cmd_login() {
     echo ""
 
     local resp
-    resp=$(curl -sf "$API_URL/login" \
+    if ! resp=$(curl --fail --show-error --silent "$API_URL/login" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>&1)
-
-    if [[ $? -ne 0 ]]; then
-        echo "Error: invalid email or password"
+        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>&1); then
+        local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
+        echo "Error: ${detail:-invalid email or password}"
         exit 1
     fi
 
@@ -166,11 +168,9 @@ cmd_status() {
     read -p "Email: " email
 
     local resp
-    resp=$(curl -sf "$API_URL/status" \
+    if ! resp=$(curl --fail --show-error --silent "$API_URL/status" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\"}" 2>&1)
-
-    if [[ $? -ne 0 ]]; then
+        -d "{\"email\":\"$email\"}" 2>&1); then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
         echo "${detail:-Could not check status}"
         exit 1
@@ -217,9 +217,12 @@ cmd_query() {
     fi
 
     local resp http_code
-    resp=$(curl -s -w "\n%{http_code}" --max-time 60 "$API_URL/query" \
+    if ! resp=$(curl --silent --show-error --location -w "\n%{http_code}" --max-time 60 "$API_URL/query" \
         -H "X-API-Key: $key" \
-        -d "$sql" 2>&1)
+        -d "$sql" 2>&1); then
+        echo "Error: query request failed: $resp" >&2
+        exit 1
+    fi
 
     http_code=$(echo "$resp" | tail -1)
     resp=$(echo "$resp" | sed '$d')
@@ -260,9 +263,12 @@ cmd_count() {
     check_auth
     local key=$(get_key)
     local resp
-    resp=$(curl -sf "$API_URL/query" \
+    if ! resp=$(curl --fail --show-error --silent "$API_URL/query" \
         -H "X-API-Key: $key" \
-        -d "SELECT formatReadableQuantity(count()) as profiles FROM people")
+        -d "SELECT formatReadableQuantity(count()) as profiles FROM people" 2>&1); then
+        echo "Error: could not get count: $resp" >&2
+        exit 1
+    fi
     local count=$(echo "$resp" | grep -o '"profiles":"[^"]*"' | cut -d'"' -f4)
     echo "${count:-Error: could not get count}"
 }
@@ -304,9 +310,12 @@ cmd_schema() {
     echo ""
 
     local resp
-    resp=$(curl -sf "$API_URL/query" \
+    if ! resp=$(curl --fail --show-error --silent "$API_URL/query" \
         -H "X-API-Key: $key" \
-        -d "SELECT cc, count() as profiles FROM people GROUP BY cc ORDER BY profiles DESC LIMIT 15")
+        -d "SELECT cc, count() as profiles FROM people GROUP BY cc ORDER BY profiles DESC LIMIT 15" 2>&1); then
+        echo "Error: could not load country breakdown: $resp" >&2
+        exit 1
+    fi
     echo "TOP COUNTRIES (people):"
     echo "$resp" | while IFS= read -r line; do
         local cc=$(echo "$line" | grep -o '"cc":"[^"]*"' | cut -d'"' -f4)

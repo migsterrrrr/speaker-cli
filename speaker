@@ -178,19 +178,22 @@ cmd_status() {
 
     local status=$(echo "$resp" | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
 
-    if [[ "$status" == "approved" ]]; then
-        local key=$(echo "$resp" | grep -o '"api_key":"[^"]*"' | cut -d'"' -f4)
-        mkdir -p "$CONFIG_DIR"
-        echo "$key" > "$CONFIG_FILE"
-        chmod 600 "$CONFIG_FILE"
-        echo "✓ Approved! API key saved. You're in."
-        echo ""
-        echo "Try:"
-        echo "  speaker count"
-        echo "  speaker query \"SELECT first, last, headline FROM people WHERE cc = 'uk' LIMIT 10\""
-    else
-        echo "⏳ Account is still pending approval. Check back later."
-    fi
+    case "$status" in
+        approved)
+            echo "✓ Account approved."
+            if [[ -f "$CONFIG_FILE" ]]; then
+                echo "  API key is already saved. Run 'speaker query' to get started."
+            else
+                echo "  Run 'speaker login' to set your API key."
+            fi
+            ;;
+        pending)
+            echo "⏳ Account is still pending approval. Check back later."
+            ;;
+        *)
+            echo "No account found for this email. Run 'speaker signup' to create one."
+            ;;
+    esac
 }
 
 cmd_logout() {

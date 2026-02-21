@@ -36,6 +36,11 @@ cmd_update() {
 }
 
 # --- Helpers ---
+json_escape() {
+    local s="${1//\\/\\\\}"
+    echo "${s//\"/\\\"}"
+}
+
 get_key() {
     if [[ -f "$CONFIG_FILE" ]]; then
         cat "$CONFIG_FILE"
@@ -83,7 +88,7 @@ cmd_signup() {
     local resp
     if ! resp=$(curl --fail --show-error --silent "$API_URL/signup" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\",\"invite_code\":\"$invite_code\"}" 2>&1); then
+        -d "{\"email\":\"$(json_escape "$email")\",\"invite_code\":\"$(json_escape "$invite_code")\"}" 2>&1); then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
         echo "Error: ${detail:-signup failed}"
         exit 1
@@ -146,7 +151,7 @@ cmd_login() {
     local resp
     if ! resp=$(curl --fail --show-error --silent "$API_URL/login" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>&1); then
+        -d "{\"email\":\"$(json_escape "$email")\",\"password\":\"$(json_escape "$password")\"}" 2>&1); then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
         echo "Error: ${detail:-invalid email or password}"
         exit 1
@@ -170,7 +175,7 @@ cmd_status() {
     local resp
     if ! resp=$(curl --fail --show-error --silent "$API_URL/status" \
         -H "Content-Type: application/json" \
-        -d "{\"email\":\"$email\"}" 2>&1); then
+        -d "{\"email\":\"$(json_escape "$email")\"}" 2>&1); then
         local detail=$(echo "$resp" | grep -o '"detail":"[^"]*"' | cut -d'"' -f4)
         echo "${detail:-Could not check status}"
         exit 1

@@ -282,7 +282,7 @@ WHERE title ILIKE '%CIO%' AND loc ILIKE '%US%' AND cc = 'us'
 -- Kills 93% of results. The 7% it finds are false positives from Houston, Austin, etc.
 ```
 
-**Why**: `loc` is a free-text string from LinkedIn — `"New York, New York, United States"`, `"San Francisco Bay Area"`, `"Greater Chicago Area"`. There's no standardized format. `ILIKE '%US%'` doesn't match `"United States"` (no contiguous "US" substring) and accidentally matches cities containing "us" (Houston, Austin, Lausanne).
+**Why**: `loc` is a free-text location string — `"New York, New York, United States"`, `"San Francisco Bay Area"`, `"Greater Chicago Area"`. There's no standardized format. `ILIKE '%US%'` doesn't match `"United States"` (no contiguous "US" substring) and accidentally matches cities containing "us" (Houston, Austin, Lausanne).
 
 **Fix**: use `cc` for country, `loc` for city/metro:
 

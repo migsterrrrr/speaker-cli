@@ -83,12 +83,12 @@ One row per person-role. 1.36B rows. Sorted by company name.
 | `start` | Nullable(String) | Start date (YYYY-MM) |
 | `end` | Nullable(String) | End date. **NULL = current role** |
 | `desc` | Nullable(String) | Role description — useful for qualifying scope of responsibility |
-| `cc` | String | Country code |
+| `cc` | String | Country code — **use this for country filtering**, not `loc` |
 | `slug` | String | **Person identifier — always include this** |
 | `first` | String | First name |
 | `last` | String | Last name |
 | `headline` | String | Professional headline |
-| `loc` | String | Location |
+| `loc` | String | Free-text location (city/metro/region). Use for city filtering (`loc ILIKE '%New York%'`), not country |
 
 ### `people` — person enrichment & everything else
 
@@ -100,8 +100,8 @@ One row per person-role. 1.36B rows. Sorted by company name.
 | `last` | String | Last name |
 | `slug` | String | Unique person identifier |
 | `headline` | Nullable(String) | Professional headline |
-| `loc` | Nullable(String) | Location (city, country) |
-| `cc` | LowCardinality(String) | Country code (lowercase) |
+| `loc` | Nullable(String) | Free-text location (city/metro/region). Use for city filtering, not country |
+| `cc` | LowCardinality(String) | Country code (lowercase) — **use this for country filtering**, not `loc` |
 | `email` | Nullable(String) | Email (where available) |
 | `bio` | Nullable(String) | Short bio (max 200 chars) |
 | `roles` | Array(Tuple) | Work history — `title`, `org`, `slug`, `web`, `cc`, `start`, `end`, `desc` |
@@ -271,6 +271,32 @@ Non-English countries use local titles. Include locale variants:
 ## Things That Go Wrong
 
 This is the most important section. Everything above you can figure out from the schema. These are the things that look correct, return results, but are silently wrong.
+
+### loc is for cities, cc is for countries
+
+**The trap**: you want US-based people, so you add `loc ILIKE '%US%'`:
+
+```sql
+-- BROKEN: "United States" does NOT contain "US" as a substring
+WHERE title ILIKE '%CIO%' AND loc ILIKE '%US%' AND cc = 'us'
+-- Kills 93% of results. The 7% it finds are false positives from Houston, Austin, etc.
+```
+
+**Why**: `loc` is a free-text string from LinkedIn — `"New York, New York, United States"`, `"San Francisco Bay Area"`, `"Greater Chicago Area"`. There's no standardized format. `ILIKE '%US%'` doesn't match `"United States"` (no contiguous "US" substring) and accidentally matches cities containing "us" (Houston, Austin, Lausanne).
+
+**Fix**: use `cc` for country, `loc` for city/metro:
+
+```sql
+-- Country filtering → cc
+WHERE cc = 'us'
+
+-- City/metro filtering → loc
+WHERE cc = 'us' AND loc ILIKE '%New York%'
+WHERE cc = 'us' AND loc ILIKE '%San Francisco%'
+WHERE cc = 'uk' AND loc ILIKE '%London%'
+```
+
+**Never use `loc` to filter by country.** The `cc` field exists for exactly this purpose and is 100% reliable.
 
 ### LIMIT starvation with multi-company queries
 
